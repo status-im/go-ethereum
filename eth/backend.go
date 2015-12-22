@@ -70,6 +70,9 @@ type Config struct {
 	NetworkId int    // Network ID to use for selecting peers to connect to
 	Genesis   string // Genesis JSON to seed the chain database with
 	FastSync  bool   // Enables the state download based fast synchronisation algorithm
+	LightMode bool   // Running in light client mode
+	LightServ int    // Maximum percentage of time allowed for serving LES requests
+	LightPeers int    // Maximum number of LES client peers
 
 	BlockChainVersion  int
 	SkipBcVersionCheck bool // e.g. blockchain export
@@ -103,6 +106,12 @@ type Config struct {
 	TestGenesisState ethdb.Database // Genesis state to seed the database with (testing only!)
 }
 
+type LesServer interface {
+	Start()
+	Stop()
+	Protocols() []p2p.Protocol
+}
+
 // FullNodeService implements the Ethereum full node service.
 type FullNodeService struct {
 	chainConfig *core.ChainConfig
@@ -112,6 +121,7 @@ type FullNodeService struct {
 	txPool          *core.TxPool
 	blockchain      *core.BlockChain
 	protocolManager *ProtocolManager
+	ls              LesServer
 	// DB interfaces
 	chainDb ethdb.Database // Block chain database
 	dappDb  ethdb.Database // Dapp database
@@ -134,6 +144,10 @@ type FullNodeService struct {
 	PowTest       bool
 	netVersionId  int
 	netRPCService *ethapi.PublicNetAPI
+}
+
+func (s *FullNodeService) AddLesServer(ls LesServer) {
+	s.ls = ls
 }
 
 // New creates a new FullNodeService object (including the
@@ -390,7 +404,11 @@ func (s *FullNodeService) Downloader() *downloader.Downloader { return s.protoco
 // Protocols implements node.Service, returning all the currently configured
 // network protocols to start.
 func (s *FullNodeService) Protocols() []p2p.Protocol {
-	return s.protocolManager.SubProtocols
+	if s.ls == nil {
+		return s.protocolManager.SubProtocols
+	} else {
+		return append(s.protocolManager.SubProtocols, s.ls.Protocols()...)
+	}
 }
 
 // Start implements node.Service, starting all internal goroutines needed by the
@@ -401,6 +419,9 @@ func (s *FullNodeService) Start(srvr *p2p.Server) error {
 		s.StartAutoDAG()
 	}
 	s.protocolManager.Start()
+	if s.ls != nil {
+		s.ls.Start()
+	}
 	return nil
 }
 
@@ -409,6 +430,9 @@ func (s *FullNodeService) Start(srvr *p2p.Server) error {
 func (s *FullNodeService) Stop() error {
 	s.blockchain.Stop()
 	s.protocolManager.Stop()
+	if s.ls != nil {
+		s.ls.Stop()
+	}
 	s.txPool.Stop()
 	s.miner.Stop()
 	s.eventMux.Stop()

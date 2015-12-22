@@ -52,11 +52,6 @@ func NewPublicFullEthereumAPI(e *FullNodeService, gpo *gasprice.GasPriceOracle) 
 	return &PublicFullEthereumAPI{e, gpo}
 }
 
-// GasPrice returns a suggestion for a gas price.
-func (s *PublicFullEthereumAPI) GasPrice() *big.Int {
-	return s.gpo.SuggestPrice()
-}
-
 // Etherbase is the address that mining rewards will be send to
 func (s *PublicFullEthereumAPI) Etherbase() (common.Address, error) {
 	return s.e.Etherbase()

@@ -28,7 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"golang.org/x/net/context"
 )
@@ -43,6 +42,7 @@ var txPermanent = uint64(500)
 // always receive all locally signed transactions in the same order as they are
 // created.
 type TxPool struct {
+	config *core.ChainConfig
 	quit     chan bool
 	eventMux *event.TypeMux
 	events   event.Subscription
@@ -76,8 +76,9 @@ type TxRelayBackend interface {
 }
 
 // NewTxPool creates a new light transaction pool
-func NewTxPool(eventMux *event.TypeMux, chain *LightChain, relay TxRelayBackend) *TxPool {
+func NewTxPool(config *core.ChainConfig, eventMux *event.TypeMux, chain *LightChain, relay TxRelayBackend) *TxPool {
 	pool := &TxPool{
+		config:		config,
 		nonce:    make(map[common.Address]uint64),
 		pending:  make(map[common.Hash]*types.Transaction),
 		mined:    make(map[common.Hash][]*types.Transaction),
@@ -280,7 +281,7 @@ func (pool *TxPool) eventLoop() {
 			txc, _ := pool.setNewHead(ctx, head)
 			m, r := txc.getLists()
 			pool.relay.NewHead(pool.head, m, r)
-			pool.homestead = params.IsHomestead(head.Number)
+			pool.homestead = pool.config.IsHomestead(head.Number)
 			pool.mu.Unlock()
 		}
 	}

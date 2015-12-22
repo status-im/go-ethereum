@@ -70,7 +70,7 @@ type LightChain struct {
 // NewLightChain returns a fully initialised light chain using information
 // available in the database. It initialises the default Ethereum header
 // validator.
-func NewLightChain(odr OdrBackend, pow pow.PoW, mux *event.TypeMux) (*LightChain, error) {
+func NewLightChain(odr OdrBackend, config *core.ChainConfig, pow pow.PoW, mux *event.TypeMux) (*LightChain, error) {
 	bodyCache, _ := lru.New(bodyCacheLimit)
 	bodyRLPCache, _ := lru.New(bodyCacheLimit)
 	blockCache, _ := lru.New(blockCacheLimit)
@@ -87,8 +87,8 @@ func NewLightChain(odr OdrBackend, pow pow.PoW, mux *event.TypeMux) (*LightChain
 	}
 
 	var err error
-	bc.hc, err = core.NewHeaderChain(odr.Database(), bc.Validator, bc.getProcInterrupt)
-	bc.SetValidator(core.NewHeaderValidator(bc.hc, pow))
+	bc.hc, err = core.NewHeaderChain(odr.Database(), config, bc.Validator, bc.getProcInterrupt)
+	bc.SetValidator(core.NewHeaderValidator(config, bc.hc, pow))
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (bc *LightChain) SetHead(head uint64) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 
-	bc.hc.SetHead(head)
+	bc.hc.SetHead(head, nil)
 	bc.loadLastState()
 }
 

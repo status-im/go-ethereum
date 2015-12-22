@@ -56,7 +56,7 @@ func (odr *testOdr) Retrieve(ctx context.Context, req OdrRequest) error {
 	case *ReceiptsRequest:
 		req.Receipts = core.GetBlockReceipts(odr.sdb, req.Hash)
 	case *TrieRequest:
-		t, _ := trie.New(req.Id.root, odr.sdb)
+		t, _ := trie.New(req.Id.Root, odr.sdb)
 		req.Proof = t.Prove(req.Key)
 		trie.ClearGlobalCache()
 	case *CodeRequest:
@@ -194,7 +194,7 @@ func odrContractCall(ctx context.Context, db ethdb.Database, bc *core.BlockChain
 					to:       &testContractAddr,
 				}
 
-				vmenv := core.NewEnv(statedb, bc, msg, header)
+				vmenv := core.NewEnv(statedb, bc, msg, header, nil)
 				gp := new(core.GasPool).AddGas(common.MaxBig)
 				ret, _, _ := core.ApplyMessage(vmenv, msg, gp)
 				res = append(res, ret...)
@@ -215,7 +215,7 @@ func odrContractCall(ctx context.Context, db ethdb.Database, bc *core.BlockChain
 					to:       &testContractAddr,
 				}
 
-				vmenv := NewEnv(ctx, state, lc, msg, header)
+				vmenv := NewEnv(ctx, state, lc, msg, header, nil)
 				gp := new(core.GasPool).AddGas(common.MaxBig)
 				ret, _, _ := core.ApplyMessage(vmenv, msg, gp)
 				if vmenv.Error() == nil {
