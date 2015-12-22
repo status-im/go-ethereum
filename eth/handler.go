@@ -152,9 +152,15 @@ func NewProtocolManager(config *core.ChainConfig, fastSync bool, networkId int, 
 		return nil, errIncompatibleConfig
 	}
 	// Construct the different synchronisation mechanisms
+<<<<<<< 075f3be82631afa7eb88c2fe1b7b4a3fe5fadf17
 	manager.downloader = downloader.New(downloader.FullSync, chaindb, manager.eventMux, blockchain.HasHeader, blockchain.HasBlockAndState, blockchain.GetHeaderByHash,
 		blockchain.GetBlockByHash, blockchain.CurrentHeader, blockchain.CurrentBlock, blockchain.CurrentFastBlock, blockchain.FastSyncCommitHead,
 		blockchain.GetTdByHash, blockchain.InsertHeaderChain, manager.insertChain, blockchain.InsertReceiptChain, blockchain.Rollback,
+=======
+	manager.downloader = downloader.New(downloader.FullSync, chaindb, manager.eventMux, blockchain.HasHeader, blockchain.HasBlockAndState, blockchain.GetHeader,
+		blockchain.GetBlock, blockchain.CurrentHeader, blockchain.CurrentBlock, blockchain.CurrentFastBlock, blockchain.FastSyncCommitHead,
+		blockchain.GetTd, blockchain.InsertHeaderChain, blockchain.InsertChain, blockchain.InsertReceiptChain, blockchain.Rollback,
+>>>>>>> les: light client protocol and API
 		manager.removePeer)
 
 	validator := func(block *types.Block, parent *types.Block) error {

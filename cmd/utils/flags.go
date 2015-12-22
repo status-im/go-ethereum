@@ -678,7 +678,7 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		DataDir:         MustMakeDataDir(ctx),
 		PrivateKey:      MakeNodeKey(ctx),
 		Name:            MakeNodeName(name, version, ctx),
-		NoDiscovery:     ctx.GlobalBool(NoDiscoverFlag.Name) || ctx.GlobalBool(LightModeFlag.Name),  // light client hack
+		NoDiscovery:     ctx.GlobalBool(NoDiscoverFlag.Name) || ctx.GlobalBool(LightModeFlag.Name), // light client hack
 		BootstrapNodes:  MakeBootstrapNodes(ctx),
 		ListenAddr:      MakeListenAddress(ctx),
 		NAT:             MakeNAT(ctx),
