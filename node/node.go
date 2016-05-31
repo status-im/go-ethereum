@@ -176,6 +176,7 @@ func (n *Node) Start() error {
 		}
 		services[kind] = service
 	}
+
 	// Gather the protocols and start the freshly assembled P2P server
 	for _, service := range services {
 		running.Protocols = append(running.Protocols, service.Protocols()...)

@@ -345,6 +345,10 @@ var (
 		Name:  "nodiscover",
 		Usage: "Disables the peer discovery mechanism (manual peer addition)",
 	}
+	NoEthFlag = cli.BoolFlag{
+		Name:  "noeth",
+		Usage: "Disable eth Protocol",
+	}
 	WhisperEnabledFlag = cli.BoolFlag{
 		Name:  "shh",
 		Usage: "Enable Whisper",
@@ -716,6 +720,9 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 	// Configure the Whisper service
 	shhEnable := ctx.GlobalBool(WhisperEnabledFlag.Name)
 
+	// Configure the Ethereum service
+	ethDisable := ctx.GlobalBool(NoEthFlag.Name)
+
 	// Override any default configs in dev mode or the test net
 	switch {
 	case ctx.GlobalBool(OlympicFlag.Name):
@@ -763,20 +770,24 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 	if err != nil {
 		Fatalf("Failed to create the protocol stack: %v", err)
 	}
-	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
-		return eth.New(ctx, ethConf)
-	}); err != nil {
-		Fatalf("Failed to register the Ethereum service: %v", err)
-	}
-	if shhEnable {
-		if err := stack.Register(func(*node.ServiceContext) (node.Service, error) { return whisper.New(), nil }); err != nil {
-			Fatalf("Failed to register the Whisper service: %v", err)
+	if !ethDisable {
+		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
+			return eth.New(ctx, ethConf)
+		}); err != nil {
+			Fatalf("Failed to register the Ethereum service: %v", err)
+		}
+		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
+			return release.NewReleaseService(ctx, relconf)
+		}); err != nil {
+			Fatalf("Failed to register the Geth release oracle service: %v", err)
 		}
 	}
-	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
-		return release.NewReleaseService(ctx, relconf)
-	}); err != nil {
-		Fatalf("Failed to register the Geth release oracle service: %v", err)
+	if shhEnable {
+		if err := stack.Register(func(*node.ServiceContext) (node.Service, error) {
+			return whisper.New(), nil
+		}); err != nil {
+			Fatalf("Failed to register the Whisper service: %v", err)
+		}
 	}
 	return stack
 }
