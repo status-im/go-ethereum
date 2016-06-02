@@ -88,7 +88,7 @@ geth-windows-amd64: xgo
 	@ls -ld $(GOBIN)/geth-windows-* | grep amd64
 
 geth-android: xgo
-	build/env.sh $(GOBIN)/xgo --go=$(GO) --dest=$(GOBIN) --targets=android-21/aar -v $(shell build/flags.sh) ./cmd/geth
+	build/env.sh $(GOBIN)/xgo --go=$(GO) --dest=$(GOBIN) --targets=android-16/aar -v $(shell build/flags.sh) ./cmd/geth
 	@echo "Android cross compilation done:"
 	@ls -ld $(GOBIN)/geth-android-*
 
