@@ -203,6 +203,7 @@ JavaScript API. See https://github.com/ethereum/go-ethereum/wiki/Javascipt-Conso
 		utils.NATFlag,
 		utils.NatspecEnabledFlag,
 		utils.NoDiscoverFlag,
+		utils.NoEthFlag,
 		utils.NodeKeyFileFlag,
 		utils.NodeKeyHexFlag,
 		utils.RPCEnabledFlag,
@@ -435,27 +436,29 @@ func startNode(ctx *cli.Context, stack *node.Node) {
 	// Start up the node itself
 	utils.StartNode(stack)
 
-	// Unlock any account specifically requested
-	var accman *accounts.Manager
-	if err := stack.Service(&accman); err != nil {
-		utils.Fatalf("ethereum service not running: %v", err)
-	}
-	passwords := utils.MakePasswordList(ctx)
-
-	accounts := strings.Split(ctx.GlobalString(utils.UnlockedAccountFlag.Name), ",")
-	for i, account := range accounts {
-		if trimmed := strings.TrimSpace(account); trimmed != "" {
-			unlockAccount(ctx, accman, trimmed, i, passwords)
-		}
-	}
-	// Start auxiliary services if enabled
-	if ctx.GlobalBool(utils.MiningEnabledFlag.Name) {
-		var ethereum *eth.FullNodeService
-		if err := stack.Service(&ethereum); err != nil {
+	if !ctx.GlobalBool(utils.NoEthFlag.Name) {
+		// Unlock any account specifically requested
+		var accman *accounts.Manager
+		if err := stack.Service(&accman); err != nil {
 			utils.Fatalf("ethereum service not running: %v", err)
 		}
-		if err := ethereum.StartMining(ctx.GlobalInt(utils.MinerThreadsFlag.Name), ctx.GlobalString(utils.MiningGPUFlag.Name)); err != nil {
-			utils.Fatalf("Failed to start mining: %v", err)
+		passwords := utils.MakePasswordList(ctx)
+
+		accounts := strings.Split(ctx.GlobalString(utils.UnlockedAccountFlag.Name), ",")
+		for i, account := range accounts {
+			if trimmed := strings.TrimSpace(account); trimmed != "" {
+				unlockAccount(ctx, accman, trimmed, i, passwords)
+			}
+		}
+		// Start auxiliary services if enabled
+		if ctx.GlobalBool(utils.MiningEnabledFlag.Name) {
+			var ethereum *eth.FullNodeService
+			if err := stack.Service(&ethereum); err != nil {
+				utils.Fatalf("ethereum service not running: %v", err)
+			}
+			if err := ethereum.StartMining(ctx.GlobalInt(utils.MinerThreadsFlag.Name), ctx.GlobalString(utils.MiningGPUFlag.Name)); err != nil {
+				utils.Fatalf("Failed to start mining: %v", err)
+			}
 		}
 	}
 }
