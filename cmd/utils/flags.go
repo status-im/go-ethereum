@@ -370,6 +370,10 @@ var (
 		Name:  "nodiscover",
 		Usage: "Disables the peer discovery mechanism (manual peer addition)",
 	}
+	NoEthFlag = cli.BoolFlag{
+		Name:  "noeth",
+		Usage: "Disable eth Protocol",
+	}
 	WhisperEnabledFlag = cli.BoolFlag{
 		Name:  "shh",
 		Usage: "Enable Whisper",
@@ -730,6 +734,9 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 	// Configure the Whisper service
 	shhEnable := ctx.GlobalBool(WhisperEnabledFlag.Name)
 
+	// Configure the Ethereum service
+	ethDisable := ctx.GlobalBool(NoEthFlag.Name)
+
 	// Override any default configs in dev mode or the test net
 	switch {
 	case ctx.GlobalBool(OlympicFlag.Name):
@@ -767,6 +774,7 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		}
 		ethConf.PowTest = true
 	}
+
 	// Assemble and return the protocol stack
 	stack, err := node.New(stackConf)
 	if err != nil {
@@ -779,34 +787,41 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		Fatalf("Failed to register the account manager service: %v", err)
 	}
 
-	if ethConf.LightMode {
-		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
-			return les.New(ctx, ethConf)
-		}); err != nil {
-			Fatalf("Failed to register the Ethereum light node service: %v", err)
-		}
-	} else {
-		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
-			fullNode, err := eth.New(ctx, ethConf)
-			if fullNode != nil {
-				ls, _ := les.NewLesServer(fullNode, ethConf)
-				fullNode.AddLesServer(ls)
+	if !ethDisable {
+		if ethConf.LightMode {
+			if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
+				return les.New(ctx, ethConf)
+			}); err != nil {
+				Fatalf("Failed to register the Ethereum light node service: %v", err)
 			}
-			return fullNode, err
-		}); err != nil {
-			Fatalf("Failed to register the Ethereum full node service: %v", err)
+		} else {
+			if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
+				fullNode, err := eth.New(ctx, ethConf)
+				if fullNode != nil {
+					ls, _ := les.NewLesServer(fullNode, ethConf)
+					fullNode.AddLesServer(ls)
+				}
+				return fullNode, err
+			}); err != nil {
+				Fatalf("Failed to register the Ethereum full node service: %v", err)
+			}
+			if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
+				return release.NewReleaseService(ctx, relconf)
+			}); err != nil {
+				Fatalf("Failed to register the Geth release oracle service: %v", err)
+			}
+
 		}
 	}
+
 	if shhEnable {
-		if err := stack.Register(func(*node.ServiceContext) (node.Service, error) { return whisper.New(), nil }); err != nil {
+		if err := stack.Register(func(*node.ServiceContext) (node.Service, error) {
+			return whisper.New(), nil
+		}); err != nil {
 			Fatalf("Failed to register the Whisper service: %v", err)
 		}
 	}
-	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
-		return release.NewReleaseService(ctx, relconf)
-	}); err != nil {
-		Fatalf("Failed to register the Geth release oracle service: %v", err)
-	}
+
 	return stack
 }
 
