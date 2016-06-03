@@ -18,6 +18,7 @@ package whisperv2
 
 import (
 	"crypto/ecdsa"
+	"fmt"
 	"sync"
 	"time"
 
@@ -143,6 +144,17 @@ func (self *Whisper) HasIdentity(key *ecdsa.PublicKey) bool {
 // GetIdentity retrieves the private key of the specified public identity.
 func (self *Whisper) GetIdentity(key *ecdsa.PublicKey) *ecdsa.PrivateKey {
 	return self.keys[string(crypto.FromECDSAPub(key))]
+}
+
+// InjectIdentity injects a manually added identity/key pair into the whisper keys
+func (self *Whisper) InjectIdentity(key *ecdsa.PrivateKey) error {
+	self.keys[string(crypto.FromECDSAPub(&key.PublicKey))] = key
+	if _, ok := self.keys[string(crypto.FromECDSAPub(&key.PublicKey))]; !ok {
+		return fmt.Errorf("key insert into keys map failed")
+	}
+
+	glog.V(logger.Info).Infof("Injected identity into whisper: %s\n", common.ToHex(crypto.FromECDSAPub(&key.PublicKey)))
+	return nil
 }
 
 // Watch installs a new message handler to run in case a matching packet arrives
