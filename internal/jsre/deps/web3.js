@@ -5653,6 +5653,12 @@ var methods = function () {
         params: 1
     });
 
+    var addIdentity = new Method({
+        name: 'addIdentity',
+        call: 'shh_addIdentity',
+        params: 1
+    });
+
     var newGroup = new Method({
         name: 'newGroup',
         call: 'shh_newGroup',
@@ -5669,6 +5675,7 @@ var methods = function () {
         post,
         newIdentity,
         hasIdentity,
+        addIdentity,
         newGroup,
         addToGroup
     ];
