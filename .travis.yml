@@ -38,8 +38,6 @@ after_success:
   # - go run build/ci.go archive -type tar
 
 notifications:
-  webhooks:
-    urls:
-      - https://webhooks.gitter.im/e/e09ccdce1048c5e03445
+  slack: assembly-vc:CRbdWdBeWxxXagyksYaqeo86
     on_success: change
     on_failure: always
