@@ -46,6 +46,9 @@ type Key struct {
 	// we only store privkey as pubkey/address can be derived from it
 	// privkey in this struct is always in plaintext
 	PrivateKey *ecdsa.PrivateKey
+	// if whisper is enabled here, the address will be used as a whisper
+	// identity upon creation of the account or unlocking of the account
+	WhisperEnabled bool
 }
 
 type keyStore interface {
@@ -175,10 +178,13 @@ func newKey(rand io.Reader) (*Key, error) {
 	return newKeyFromECDSA(privateKeyECDSA), nil
 }
 
-func storeNewKey(ks keyStore, rand io.Reader, auth string) (*Key, Account, error) {
+func storeNewKey(ks keyStore, rand io.Reader, auth string, w bool) (*Key, Account, error) {
 	key, err := newKey(rand)
 	if err != nil {
 		return nil, Account{}, err
+	}
+	if w {
+		key.WhisperEnabled = true
 	}
 	a := Account{Address: key.Address, File: ks.JoinPath(keyFileName(key.Address))}
 	if err := ks.StoreKey(a.File, key, auth); err != nil {

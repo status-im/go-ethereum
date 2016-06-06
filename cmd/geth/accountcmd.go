@@ -201,7 +201,7 @@ func unlockAccount(ctx *cli.Context, accman *accounts.Manager, address string, i
 	return accounts.Account{}, ""
 }
 
-// getPassPhrase retrieves the passwor associated with an account, either fetched
+// getPassPhrase retrieves the password associated with an account, either fetched
 // from a list of preloaded passphrases, or requested interactively from the user.
 func getPassPhrase(prompt string, confirmation bool, i int, passwords []string) string {
 	// If a list of passwords was supplied, retrieve from them
@@ -229,6 +229,23 @@ func getPassPhrase(prompt string, confirmation bool, i int, passwords []string) 
 		}
 	}
 	return password
+}
+
+// getWhisperYesNo retrieves an indication of whether or not the user wants the created
+// account to also be enabled as a whisper identity
+func getWhisperYesNo(prompt string) bool {
+
+	// prompt the user for the whisper preference
+	if prompt != "" {
+		fmt.Println(prompt)
+	}
+
+	shhRes, err := utils.Stdin.ConfirmPrompt("Enable the new account as a Whisper Identity?")
+	if err != nil {
+		utils.Fatalf("Failed to read response: %v", err)
+	}
+
+	return shhRes
 }
 
 func ambiguousAddrRecovery(am *accounts.Manager, err *accounts.AmbiguousAddrError, auth string) accounts.Account {
@@ -261,11 +278,13 @@ func ambiguousAddrRecovery(am *accounts.Manager, err *accounts.AmbiguousAddrErro
 func accountCreate(ctx *cli.Context) {
 	accman := utils.MakeAccountManager(ctx)
 	password := getPassPhrase("Your new account is locked with a password. Please give a password. Do not forget this password.", true, 0, utils.MakePasswordList(ctx))
+	whisper := getWhisperYesNo("You can also choose to enable your new account as a Whisper identity.")
 
-	account, err := accman.NewAccount(password)
+	account, err := accman.NewAccount(password, whisper)
 	if err != nil {
 		utils.Fatalf("Failed to create account: %v", err)
 	}
+
 	fmt.Printf("Address: {%x}\n", account.Address)
 }
 
