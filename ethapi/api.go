@@ -258,8 +258,8 @@ func (s *PrivateAccountAPI) ListAccounts() []common.Address {
 }
 
 // NewAccount will create a new account and returns the address for the new account.
-func (s *PrivateAccountAPI) NewAccount(password string) (common.Address, error) {
-	acc, err := s.am.NewAccount(password)
+func (s *PrivateAccountAPI) NewAccount(password string, w bool) (common.Address, error) {
+	acc, err := s.am.NewAccount(password, w)
 	if err == nil {
 		return acc.Address, nil
 	}
@@ -310,10 +310,10 @@ func NewPublicBlockChainAPI(b Backend) *PublicBlockChainAPI {
 		b: b,
 		newBlockSubscriptions: make(map[string]func(core.ChainEvent) error),
 	}
-	
+
 	go api.subscriptionLoop()
-	
-	return api	
+
+	return api
 }
 
 // subscriptionLoop reads events from the global event mux and creates notifications for the matched subscriptions.
@@ -828,8 +828,8 @@ func newRPCTransaction(b *types.Block, txHash common.Hash) (*RPCTransaction, err
 
 // PublicTransactionPoolAPI exposes methods for the RPC interface
 type PublicTransactionPoolAPI struct {
-	b    Backend
-	txMu sync.Mutex
+	b               Backend
+	txMu            sync.Mutex
 	muPendingTxSubs sync.Mutex
 	pendingTxSubs   map[string]rpc.Subscription
 }
@@ -837,7 +837,7 @@ type PublicTransactionPoolAPI struct {
 // NewPublicTransactionPoolAPI creates a new RPC service with methods specific for the transaction pool.
 func NewPublicTransactionPoolAPI(b Backend) *PublicTransactionPoolAPI {
 	api := &PublicTransactionPoolAPI{
-		b: b,
+		b:             b,
 		pendingTxSubs: make(map[string]rpc.Subscription),
 	}
 
