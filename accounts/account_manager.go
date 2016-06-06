@@ -268,8 +268,8 @@ func (am *Manager) expire(addr common.Address, u *unlocked, timeout time.Duratio
 
 // NewAccount generates a new key and stores it into the key directory,
 // encrypting it with the passphrase.
-func (am *Manager) NewAccount(passphrase string) (Account, error) {
-	_, account, err := storeNewKey(am.keyStore, crand.Reader, passphrase)
+func (am *Manager) NewAccount(passphrase string, w bool) (Account, error) {
+	_, account, err := storeNewKey(am.keyStore, crand.Reader, passphrase, w)
 	if err != nil {
 		return Account{}, err
 	}

@@ -214,8 +214,8 @@ func (s *PrivateAccountAPI) ListAccounts() []common.Address {
 }
 
 // NewAccount will create a new account and returns the address for the new account.
-func (s *PrivateAccountAPI) NewAccount(password string) (common.Address, error) {
-	acc, err := s.am.NewAccount(password)
+func (s *PrivateAccountAPI) NewAccount(password string, w bool) (common.Address, error) {
+	acc, err := s.am.NewAccount(password, w)
 	if err == nil {
 		return acc.Address, nil
 	}
