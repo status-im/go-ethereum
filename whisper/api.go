@@ -83,26 +83,6 @@ type NewFilterArgs struct {
 	Topics [][][]byte
 }
 
-// AddIdentify adds a given hex encoded identity into the known whisper identities
-func (s *PublicWhisperAPI) AddIdentity(identity string) (bool, error) {
-
-	if s.w == nil {
-		return false, whisperOffLineErr
-	}
-
-	key, err := crypto.HexToECDSA(identity)
-	if err != nil {
-		return false, fmt.Errorf("failed to convert identity to ECDSA: %s", err.Error())
-	}
-
-	err = s.w.InjectIdentity(key)
-	if err != nil {
-		return false, fmt.Errorf("failed to inject key in whisper: %s", err.Error())
-	}
-	return true, nil
-
-}
-
 // NewWhisperFilter creates and registers a new message filter to watch for inbound whisper messages.
 func (s *PublicWhisperAPI) NewFilter(args NewFilterArgs) (*rpc.HexNumber, error) {
 	if s.w == nil {
@@ -198,6 +178,9 @@ func (s *PublicWhisperAPI) Post(args PostArgs) (bool, error) {
 
 	// construct whisper message with transmission options
 	message := NewMessage(common.FromHex(args.Payload))
+	if len(message.Payload) == 0 && len(args.Payload) > 0 {
+		message.Payload = []byte(args.Payload)
+	}
 	options := Options{
 		To:     crypto.ToECDSAPub(common.FromHex(args.To)),
 		TTL:    time.Duration(args.TTL) * time.Second,
