@@ -148,10 +148,18 @@ func (self *Whisper) GetIdentity(key *ecdsa.PublicKey) *ecdsa.PrivateKey {
 
 // InjectIdentity injects a manually added identity/key pair into the whisper keys
 func (self *Whisper) InjectIdentity(key *ecdsa.PrivateKey) error {
-	self.keys[string(crypto.FromECDSAPub(&key.PublicKey))] = key
-	if _, ok := self.keys[string(crypto.FromECDSAPub(&key.PublicKey))]; !ok {
+
+	//identity := string(crypto.FromECDSAPub(&key.PublicKey))
+	var keyCopy ecdsa.PrivateKey
+	keyCopy = *key
+	identity := string(crypto.FromECDSAPub(&keyCopy.PublicKey))
+	self.keys[identity] = &keyCopy
+	if _, ok := self.keys[identity]; !ok {
 		return fmt.Errorf("key insert into keys map failed")
 	}
+
+	identityString := common.ToHex(crypto.FromECDSAPub(&key.PublicKey))
+	fmt.Printf("Injected identity into whisper: %s\n", identityString)
 	return nil
 }
 
@@ -312,11 +320,16 @@ func (self *Whisper) open(envelope *Envelope) *Message {
 	// Iterate over the keys and try to decrypt the message
 	for _, key := range self.keys {
 		message, err := envelope.Open(key)
-		if err == nil {
+		switch err {
+		case nil:
 			message.To = &key.PublicKey
 			return message
-		} else if err == ecies.ErrInvalidPublicKey {
-			return message
+		case ecies.ErrInvalidPublicKey:
+			origMessage, err := envelope.Open(nil)
+			if err != nil {
+				return nil
+			}
+			return origMessage
 		}
 	}
 	// Failed to decrypt, don't return anything
