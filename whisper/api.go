@@ -63,7 +63,7 @@ func (s *PublicWhisperAPI) HasIdentity(identity string) (bool, error) {
 	if s.w == nil {
 		return false, whisperOffLineErr
 	}
-	return s.w.HasIdentity(identity), nil
+	return s.w.HasIdentity(crypto.ToECDSAPub(common.FromHex(identity))), nil
 }
 
 // NewIdentity generates a new cryptographic identity for the client, and injects

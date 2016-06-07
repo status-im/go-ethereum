@@ -222,7 +222,7 @@ func (am *Manager) TimedUnlock(a Account, passphrase string, timeout time.Durati
 func (am *Manager) syncAccounts(a string, key *Key) error {
 	for _, service := range *am.sync {
 		if whisperInstance, ok := service.(*whisper.Whisper); ok && key.WhisperEnabled {
-			err := whisperInstance.InjectIdentity(a, key.PrivateKey)
+			err := whisperInstance.InjectIdentity(key.PrivateKey)
 			if err != nil {
 				return fmt.Errorf("failed to sync accounts with shh: %s", err.Error())
 			}
