@@ -142,7 +142,6 @@ func (self *Whisper) HasIdentity(input string) bool {
 	if len(crypto.FromECDSAPub(key)) == 65 {
 		return self.keys[string(crypto.FromECDSAPub(key))] != nil
 	}
-	fmt.Println(self.keys)
 	return self.keys[input] != nil
 }
 
