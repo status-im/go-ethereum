@@ -137,8 +137,13 @@ func (self *Whisper) NewIdentity() *ecdsa.PrivateKey {
 
 // HasIdentity checks if the the whisper node is configured with the private key
 // of the specified public pair.
-func (self *Whisper) HasIdentity(key *ecdsa.PublicKey) bool {
-	return self.keys[string(crypto.FromECDSAPub(key))] != nil
+func (self *Whisper) HasIdentity(input string) bool {
+	key := crypto.ToECDSAPub(common.FromHex(input))
+	if len(crypto.FromECDSAPub(key)) == 65 {
+		return self.keys[string(crypto.FromECDSAPub(key))] != nil
+	}
+	fmt.Println(self.keys)
+	return self.keys[input] != nil
 }
 
 // GetIdentity retrieves the private key of the specified public identity.
@@ -147,9 +152,9 @@ func (self *Whisper) GetIdentity(key *ecdsa.PublicKey) *ecdsa.PrivateKey {
 }
 
 // InjectIdentity injects a manually added identity/key pair into the whisper keys
-func (self *Whisper) InjectIdentity(key *ecdsa.PrivateKey) error {
-	self.keys[string(crypto.FromECDSAPub(&key.PublicKey))] = key
-	if _, ok := self.keys[string(crypto.FromECDSAPub(&key.PublicKey))]; !ok {
+func (self *Whisper) InjectIdentity(address string, key *ecdsa.PrivateKey) error {
+	self.keys[address] = key
+	if _, ok := self.keys[address]; !ok {
 		return fmt.Errorf("key insert into keys map failed")
 	}
 	return nil

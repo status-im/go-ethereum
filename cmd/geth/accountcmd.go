@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"gopkg.in/urfave/cli.v1"
+	"github.com/ethereum/go-ethereum/node"
 )
 
 var (
@@ -168,7 +169,8 @@ nodes.
 )
 
 func accountList(ctx *cli.Context) error {
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 	for i, acct := range accman.Accounts() {
 		fmt.Printf("Account #%d: {%x} %s\n", i, acct.Address, acct.File)
 	}
@@ -278,7 +280,8 @@ func ambiguousAddrRecovery(am *accounts.Manager, err *accounts.AmbiguousAddrErro
 
 // accountCreate creates a new account into the keystore defined by the CLI flags.
 func accountCreate(ctx *cli.Context) error {
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 	password := getPassPhrase("Your new account is locked with a password. Please give a password. Do not forget this password.", true, 0, utils.MakePasswordList(ctx))
 	whisper := getWhisperYesNo("You can also choose to enable your new account as a Whisper identity.")
 
@@ -297,7 +300,8 @@ func accountUpdate(ctx *cli.Context) error {
 	if len(ctx.Args()) == 0 {
 		utils.Fatalf("No accounts specified to update")
 	}
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 
 	account, oldPassword := unlockAccount(ctx, accman, ctx.Args().First(), 0, nil)
 	newPassword := getPassPhrase("Please give a new password. Do not forget this password.", true, 0, nil)
@@ -317,7 +321,8 @@ func importWallet(ctx *cli.Context) error {
 		utils.Fatalf("Could not read wallet file: %v", err)
 	}
 
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 	passphrase := getPassPhrase("", false, 0, utils.MakePasswordList(ctx))
 
 	acct, err := accman.ImportPreSaleKey(keyJson, passphrase)
@@ -337,7 +342,8 @@ func accountImport(ctx *cli.Context) error {
 	if err != nil {
 		utils.Fatalf("Failed to load the private key: %v", err)
 	}
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 	passphrase := getPassPhrase("Your new account is locked with a password. Please give a password. Do not forget this password.", true, 0, utils.MakePasswordList(ctx))
 	acct, err := accman.ImportECDSA(key, passphrase)
 	if err != nil {

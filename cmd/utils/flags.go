@@ -580,7 +580,7 @@ func MakeDatabaseHandles() int {
 }
 
 // MakeAccountManager creates an account manager from set command line flags.
-func MakeAccountManager(ctx *cli.Context) *accounts.Manager {
+func MakeAccountManager(ctx *cli.Context, accountSync *[]node.Service) *accounts.Manager {
 	// Create the keystore crypto primitive, light if requested
 	scryptN := accounts.StandardScryptN
 	scryptP := accounts.StandardScryptP
@@ -590,7 +590,7 @@ func MakeAccountManager(ctx *cli.Context) *accounts.Manager {
 	}
 	datadir := MustMakeDataDir(ctx)
 	keydir := MakeKeyStoreDir(datadir, ctx)
-	return accounts.NewManager(keydir, scryptN, scryptP)
+	return accounts.NewManager(keydir, scryptN, scryptP, accountSync)
 }
 
 // MakeAddress converts an account specified directly as a hex encoded string or
@@ -690,7 +690,8 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		WSModules:       MakeRPCModules(ctx.GlobalString(WSApiFlag.Name)),
 	}
 	// Configure the Ethereum service
-	accman := MakeAccountManager(ctx)
+	var AccountSync []node.Service
+	accman := MakeAccountManager(ctx, &AccountSync)
 
 	// initialise new random number generator
 	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -731,6 +732,7 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		SolcPath:                ctx.GlobalString(SolcPathFlag.Name),
 		AutoDAG:                 ctx.GlobalBool(AutoDAGFlag.Name) || ctx.GlobalBool(MiningEnabledFlag.Name),
 	}
+
 	// Configure the Whisper service
 	shhEnable := ctx.GlobalBool(WhisperEnabledFlag.Name)
 
@@ -781,6 +783,16 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		Fatalf("Failed to create the protocol stack: %v", err)
 	}
 
+	if shhEnable {
+		if err := stack.Register(func(*node.ServiceContext) (node.Service, error) {
+			whisperInstance := whisper.New()
+			AccountSync = append(AccountSync, whisperInstance)
+			return whisperInstance, nil
+		}); err != nil {
+			Fatalf("Failed to register the Whisper service: %v", err)
+		}
+	}
+
 	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
 		return accman, nil
 	}); err != nil {
@@ -811,14 +823,6 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 				Fatalf("Failed to register the Geth release oracle service: %v", err)
 			}
 
-		}
-	}
-
-	if shhEnable {
-		if err := stack.Register(func(*node.ServiceContext) (node.Service, error) {
-			return whisper.New(), nil
-		}); err != nil {
-			Fatalf("Failed to register the Whisper service: %v", err)
 		}
 	}
 

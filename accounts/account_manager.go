@@ -34,8 +34,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/whisper"
 )
 
 var (
@@ -70,6 +72,7 @@ type Manager struct {
 	keyStore keyStore
 	mu       sync.RWMutex
 	unlocked map[common.Address]*unlocked
+	sync     *[]node.Service
 }
 
 type unlocked struct {
@@ -78,9 +81,12 @@ type unlocked struct {
 }
 
 // NewManager creates a manager for the given directory.
-func NewManager(keydir string, scryptN, scryptP int) *Manager {
+func NewManager(keydir string, scryptN, scryptP int, s *[]node.Service) *Manager {
 	keydir, _ = filepath.Abs(keydir)
-	am := &Manager{keyStore: &keyStorePassphrase{keydir, scryptN, scryptP}}
+	am := &Manager{
+		keyStore: &keyStorePassphrase{keydir, scryptN, scryptP},
+		sync:     s,
+	}
 	am.init(keydir)
 	return am
 }
@@ -186,9 +192,19 @@ func (am *Manager) Lock(addr common.Address) error {
 // shortens the active unlock timeout. If the address was previously unlocked
 // indefinitely the timeout is not altered.
 func (am *Manager) TimedUnlock(a Account, passphrase string, timeout time.Duration) error {
+
 	a, key, err := am.getDecryptedKey(a, passphrase)
 	if err != nil {
 		return err
+	}
+
+	// sync key to subprotocols (e.g., whisper identity)
+	if am.sync != nil {
+		address := fmt.Sprintf("%x", a.Address)
+		err = am.syncAccounts(address, key)
+		if err != nil {
+			return fmt.Errorf("failed to sync accounts: %s", err.Error())
+		}
 	}
 
 	am.mu.Lock()
@@ -212,6 +228,18 @@ func (am *Manager) TimedUnlock(a Account, passphrase string, timeout time.Durati
 		u = &unlocked{Key: key}
 	}
 	am.unlocked[a.Address] = u
+	return nil
+}
+
+func (am *Manager) syncAccounts(a string, key *Key) error {
+	for _, service := range *am.sync {
+		if whisperInstance, ok := service.(*whisper.Whisper); ok && key.WhisperEnabled {
+			err := whisperInstance.InjectIdentity(a, key.PrivateKey)
+			if err != nil {
+				return fmt.Errorf("failed to sync accounts with shh: %s", err.Error())
+			}
+		}
+	}
 	return nil
 }
 
@@ -250,13 +278,25 @@ func (am *Manager) expire(addr common.Address, u *unlocked, timeout time.Duratio
 // NewAccount generates a new key and stores it into the key directory,
 // encrypting it with the passphrase.
 func (am *Manager) NewAccount(passphrase string, w bool) (Account, error) {
-	_, account, err := storeNewKey(am.keyStore, crand.Reader, passphrase, w)
+
+	key, account, err := storeNewKey(am.keyStore, crand.Reader, passphrase, w)
 	if err != nil {
 		return Account{}, err
 	}
+
 	// Add the account to the cache immediately rather
 	// than waiting for file system notifications to pick it up.
 	am.cache.add(account)
+
+	// sync key to subprotocols (e.g., whisper identity)
+	if am.sync != nil {
+		address := fmt.Sprintf("%x", account.Address)
+		err = am.syncAccounts(address, key)
+		if err != nil {
+			return account, fmt.Errorf("failed to sync accounts: %s", err.Error())
+		}
+	}
+
 	return account, nil
 }
 
