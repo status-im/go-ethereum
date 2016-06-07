@@ -63,7 +63,7 @@ func (s *PublicWhisperAPI) HasIdentity(identity string) (bool, error) {
 	if s.w == nil {
 		return false, whisperOffLineErr
 	}
-	return s.w.HasIdentity(crypto.ToECDSAPub(common.FromHex(identity))), nil
+	return s.w.HasIdentity(identity), nil
 }
 
 // NewIdentity generates a new cryptographic identity for the client, and injects
@@ -81,26 +81,6 @@ type NewFilterArgs struct {
 	To     string
 	From   string
 	Topics [][][]byte
-}
-
-// AddIdentify adds a given hex encoded identity into the known whisper identities
-func (s *PublicWhisperAPI) AddIdentity(identity string) (bool, error) {
-
-	if s.w == nil {
-		return false, whisperOffLineErr
-	}
-
-	key, err := crypto.HexToECDSA(identity)
-	if err != nil {
-		return false, fmt.Errorf("failed to convert identity to ECDSA: %s", err.Error())
-	}
-
-	err = s.w.InjectIdentity(key)
-	if err != nil {
-		return false, fmt.Errorf("failed to inject key in whisper: %s", err.Error())
-	}
-	return true, nil
-
 }
 
 // NewWhisperFilter creates and registers a new message filter to watch for inbound whisper messages.
