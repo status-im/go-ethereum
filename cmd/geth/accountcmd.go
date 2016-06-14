@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
+	"github.com/ethereum/go-ethereum/node"
 )
 
 var (
@@ -167,7 +168,8 @@ nodes.
 )
 
 func accountList(ctx *cli.Context) {
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 	for i, acct := range accman.Accounts() {
 		fmt.Printf("Account #%d: {%x} %s\n", i, acct.Address, acct.File)
 	}
@@ -201,7 +203,7 @@ func unlockAccount(ctx *cli.Context, accman *accounts.Manager, address string, i
 	return accounts.Account{}, ""
 }
 
-// getPassPhrase retrieves the passwor associated with an account, either fetched
+// getPassPhrase retrieves the password associated with an account, either fetched
 // from a list of preloaded passphrases, or requested interactively from the user.
 func getPassPhrase(prompt string, confirmation bool, i int, passwords []string) string {
 	// If a list of passwords was supplied, retrieve from them
@@ -229,6 +231,23 @@ func getPassPhrase(prompt string, confirmation bool, i int, passwords []string) 
 		}
 	}
 	return password
+}
+
+// getWhisperYesNo retrieves an indication of whether or not the user wants the created
+// account to also be enabled as a whisper identity
+func getWhisperYesNo(prompt string) bool {
+
+	// prompt the user for the whisper preference
+	if prompt != "" {
+		fmt.Println(prompt)
+	}
+
+	shhRes, err := utils.Stdin.ConfirmPrompt("Enable the new account as a Whisper Identity?")
+	if err != nil {
+		utils.Fatalf("Failed to read response: %v", err)
+	}
+
+	return shhRes
 }
 
 func ambiguousAddrRecovery(am *accounts.Manager, err *accounts.AmbiguousAddrError, auth string) accounts.Account {
@@ -259,13 +278,16 @@ func ambiguousAddrRecovery(am *accounts.Manager, err *accounts.AmbiguousAddrErro
 
 // accountCreate creates a new account into the keystore defined by the CLI flags.
 func accountCreate(ctx *cli.Context) {
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 	password := getPassPhrase("Your new account is locked with a password. Please give a password. Do not forget this password.", true, 0, utils.MakePasswordList(ctx))
+	whisper := getWhisperYesNo("You can also choose to enable your new account as a Whisper identity.")
 
-	account, err := accman.NewAccount(password)
+	account, err := accman.NewAccount(password, whisper)
 	if err != nil {
 		utils.Fatalf("Failed to create account: %v", err)
 	}
+
 	fmt.Printf("Address: {%x}\n", account.Address)
 }
 
@@ -275,7 +297,8 @@ func accountUpdate(ctx *cli.Context) {
 	if len(ctx.Args()) == 0 {
 		utils.Fatalf("No accounts specified to update")
 	}
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 
 	account, oldPassword := unlockAccount(ctx, accman, ctx.Args().First(), 0, nil)
 	newPassword := getPassPhrase("Please give a new password. Do not forget this password.", true, 0, nil)
@@ -294,7 +317,8 @@ func importWallet(ctx *cli.Context) {
 		utils.Fatalf("Could not read wallet file: %v", err)
 	}
 
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 	passphrase := getPassPhrase("", false, 0, utils.MakePasswordList(ctx))
 
 	acct, err := accman.ImportPreSaleKey(keyJson, passphrase)
@@ -313,7 +337,8 @@ func accountImport(ctx *cli.Context) {
 	if err != nil {
 		utils.Fatalf("keyfile must be given as argument")
 	}
-	accman := utils.MakeAccountManager(ctx)
+	var sync *[]node.Service
+	accman := utils.MakeAccountManager(ctx, sync)
 	passphrase := getPassPhrase("Your new account is locked with a password. Please give a password. Do not forget this password.", true, 0, utils.MakePasswordList(ctx))
 	acct, err := accman.ImportECDSA(key, passphrase)
 	if err != nil {
