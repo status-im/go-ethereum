@@ -662,7 +662,7 @@ func MakePasswordList(ctx *cli.Context) []string {
 
 // MakeSystemNode sets up a local node, configures the services to launch and
 // assembles the P2P protocol stack.
-func MakeSystemNode(name, version string, relconf release.Config, extra []byte, ctx *cli.Context) (*node.Node, *[]node.Service) {
+func MakeSystemNode(name, version string, relconf release.Config, extra []byte, ctx *cli.Context) (*node.Node, []node.Service) {
 	// Avoid conflicting network flags
 	networks, netFlags := 0, []cli.BoolFlag{DevModeFlag, TestNetFlag, OlympicFlag}
 	for _, flag := range netFlags {
@@ -837,7 +837,7 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		}
 	}
 
-	return stack, &accountSync
+	return stack, accountSync
 }
 
 // SetupNetwork configures the system for either the main net or some test network.
