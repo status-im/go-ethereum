@@ -662,7 +662,7 @@ func MakePasswordList(ctx *cli.Context) []string {
 
 // MakeSystemNode sets up a local node, configures the services to launch and
 // assembles the P2P protocol stack.
-func MakeSystemNode(name, version string, relconf release.Config, extra []byte, ctx *cli.Context) *node.Node {
+func MakeSystemNode(name, version string, relconf release.Config, extra []byte, ctx *cli.Context) (*node.Node, []node.Service) {
 	// Avoid conflicting network flags
 	networks, netFlags := 0, []cli.BoolFlag{DevModeFlag, TestNetFlag, OlympicFlag}
 	for _, flag := range netFlags {
@@ -695,7 +695,8 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		WSModules:       MakeRPCModules(ctx.GlobalString(WSApiFlag.Name)),
 	}
 	// Configure the Ethereum service
-	accman := MakeAccountManager(ctx)
+	var accountSync []node.Service
+	accman := MakeAccountManager(ctx, &accountSync)
 
 	// initialise new random number generator
 	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -792,6 +793,16 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		Fatalf("Failed to create the protocol stack: %v", err)
 	}
 
+	if shhEnable {
+		if err := stack.Register(func(*node.ServiceContext) (node.Service, error) {
+			whisperInstance := whisper.New()
+			accountSync = append(accountSync, whisperInstance)
+			return whisperInstance, nil
+		}); err != nil {
+			Fatalf("Failed to register the Whisper service: %v", err)
+		}
+	}
+
 	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
 		return accman, nil
 	}); err != nil {
@@ -825,15 +836,7 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		}
 	}
 
-	if shhEnable {
-		if err := stack.Register(func(*node.ServiceContext) (node.Service, error) {
-			return whisper.New(), nil
-		}); err != nil {
-			Fatalf("Failed to register the Whisper service: %v", err)
-		}
-	}
-
-	return stack
+	return stack, accountSync
 }
 
 // SetupNetwork configures the system for either the main net or some test network.
