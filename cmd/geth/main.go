@@ -298,7 +298,7 @@ func makeDefaultExtra() []byte {
 // It creates a default node based on the command line arguments and runs it in
 // blocking mode, waiting for it to be shut down.
 func geth(ctx *cli.Context) {
-	node := utils.MakeSystemNode(clientIdentifier, verString, relConfig, makeDefaultExtra(), ctx)
+	node, _ := utils.MakeSystemNode(clientIdentifier, verString, relConfig, makeDefaultExtra(), ctx)
 	startNode(ctx, node)
 	node.Wait()
 }
@@ -362,7 +362,7 @@ func initGenesis(ctx *cli.Context) {
 // same time.
 func console(ctx *cli.Context) {
 	// Create and start the node based on the CLI flags
-	node := utils.MakeSystemNode(clientIdentifier, verString, relConfig, makeDefaultExtra(), ctx)
+	node, _ := utils.MakeSystemNode(clientIdentifier, verString, relConfig, makeDefaultExtra(), ctx)
 	startNode(ctx, node)
 
 	// Attach to the newly started node, and either execute script or become interactive
@@ -395,7 +395,7 @@ func console(ctx *cli.Context) {
 // of the JavaScript files specified as command arguments.
 func execScripts(ctx *cli.Context) {
 	// Create and start the node based on the CLI flags
-	node := utils.MakeSystemNode(clientIdentifier, verString, relConfig, makeDefaultExtra(), ctx)
+	node, _ := utils.MakeSystemNode(clientIdentifier, verString, relConfig, makeDefaultExtra(), ctx)
 	startNode(ctx, node)
 	defer node.Stop()
 
