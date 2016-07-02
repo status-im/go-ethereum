@@ -40,6 +40,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/les"
 	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/logger"
@@ -414,6 +415,13 @@ var (
 	}
 )
 
+// DebugSetup sets up the debugging parameters such that logs can be retrieved when a
+// node is started via importing go-ethereum packages, as opposed to starting via CLI
+func DebugSetup(ctx *cli.Context) error {
+	err := debug.Setup(ctx)
+	return err
+}
+
 // MustMakeDataDir retrieves the currently requested data directory, terminating
 // if none (or the empty string) is specified. If the node is starting a testnet,
 // the a subdirectory of the specified datadir will be used.
@@ -662,7 +670,7 @@ func MakePasswordList(ctx *cli.Context) []string {
 
 // MakeSystemNode sets up a local node, configures the services to launch and
 // assembles the P2P protocol stack.
-func MakeSystemNode(name, version string, relconf release.Config, extra []byte, ctx *cli.Context) (*node.Node, []node.Service) {
+func MakeSystemNode(name, version string, relconf release.Config, extra []byte, ctx *cli.Context) (*node.Node, *[]node.Service) {
 	// Avoid conflicting network flags
 	networks, netFlags := 0, []cli.BoolFlag{DevModeFlag, TestNetFlag, OlympicFlag}
 	for _, flag := range netFlags {
@@ -837,7 +845,7 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		}
 	}
 
-	return stack, accountSync
+	return stack, &accountSync
 }
 
 // SetupNetwork configures the system for either the main net or some test network.
