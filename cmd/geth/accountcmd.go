@@ -242,7 +242,7 @@ func getWhisperYesNo(prompt string) bool {
 		fmt.Println(prompt)
 	}
 
-	shhRes, err := utils.Stdin.ConfirmPrompt("Enable the new account as a Whisper Identity?")
+	shhRes, err := console.Stdin.PromptConfirm("Enable the new account as a Whisper Identity?")
 	if err != nil {
 		utils.Fatalf("Failed to read response: %v", err)
 	}
