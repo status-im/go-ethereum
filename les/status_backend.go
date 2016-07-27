@@ -29,9 +29,11 @@ type StatusBackend struct {
 	txEvictingQueue evictingTxQueue
 }
 
+type QueuedTxHash string
+
 type evictingTxQueue struct {
-	transactions  map[common.Hash]*QueuedTx
-	evictionQueue chan common.Hash
+	transactions  map[QueuedTxHash]*QueuedTx
+	evictionQueue chan QueuedTxHash
 	cap           int
 	mu            sync.Mutex
 }
@@ -64,8 +66,8 @@ func NewStatusBackend(apiBackend ethapi.Backend) *StatusBackend {
 		txapi:   ethapi.NewPublicTransactionPoolAPI(apiBackend),
 		txQueue: make(chan QueuedTx, defaultTxQueueCap),
 		txEvictingQueue: evictingTxQueue{
-			transactions:  make(map[common.Hash]*QueuedTx),
-			evictionQueue: make(chan common.Hash, defaultEvictingTxQueueCap), // will be used to evict in FIFO
+			transactions:  make(map[QueuedTxHash]*QueuedTx),
+			evictionQueue: make(chan QueuedTxHash, defaultEvictingTxQueueCap), // will be used to evict in FIFO
 			cap:           defaultEvictingTxQueueCap,
 		},
 	}
@@ -93,7 +95,7 @@ func (b *StatusBackend) SendTransaction(ctx context.Context, args SendTxArgs) er
 }
 
 // CompleteQueuedTransaction wraps call to PublicTransactionPoolAPI.CompleteQueuedTransaction
-func (b *StatusBackend) CompleteQueuedTransaction(hash common.Hash) error {
+func (b *StatusBackend) CompleteQueuedTransaction(hash QueuedTxHash) error {
 	queuedTx, err := b.txEvictingQueue.getQueuedTransaction(hash)
 	if err != nil {
 		return err
@@ -141,13 +143,13 @@ func (q *evictingTxQueue) enqueueQueuedTransaction(tx QueuedTx) error {
 		}
 	}
 
-	q.transactions[tx.Hash] = &tx
-	q.evictionQueue <- tx.Hash
+	q.transactions[QueuedTxHash(tx.Hash.Hex())] = &tx
+	q.evictionQueue <- QueuedTxHash(tx.Hash.Hex())
 
 	return nil
 }
 
-func (q *evictingTxQueue) getQueuedTransaction(hash common.Hash) (*QueuedTx, error) {
+func (q *evictingTxQueue) getQueuedTransaction(hash QueuedTxHash) (*QueuedTx, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
