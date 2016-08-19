@@ -18,6 +18,15 @@ if [ ! -L "$ethdir/go-ethereum" ]; then
     cd "$root"
 fi
 
+# Link status-go lib
+statusgodir="$workspace/src/github.com/status-im"
+if [ ! -L "$statusgodir/status-go" ]; then
+    mkdir -p "$statusgodir"
+    cd "$statusgodir"
+    ln -s ../../../../../../../status-im/status-go status-go
+    cd "$root"
+fi
+
 # Set up the environment to use the workspace.
 # Also add Godeps workspace so we build using canned dependencies.
 GOPATH="$workspace"
