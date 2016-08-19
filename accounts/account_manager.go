@@ -34,6 +34,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/pborman/uuid"
+	"github.com/status-im/status-go/src/extkeys"
 )
 
 var (
@@ -111,6 +113,11 @@ func (am *Manager) HasAddress(addr common.Address) bool {
 // Accounts returns all key files present in the directory.
 func (am *Manager) Accounts() []Account {
 	return am.cache.accounts()
+}
+
+// AccountDecryptedKey returns decrypted key for account (provided that password is correct).
+func (am *Manager) AccountDecryptedKey(a Account, auth string) (Account, *Key, error) {
+	return am.getDecryptedKey(a, auth)
 }
 
 // Delete deletes the key matched by account if the passphrase is correct.
@@ -263,6 +270,34 @@ func (am *Manager) NewAccount(passphrase string, w bool) (Account, error) {
 	// Add the account to the cache immediately rather
 	// than waiting for file system notifications to pick it up.
 	am.cache.add(account)
+	return account, nil
+}
+
+// NewAccount stores into key directory the provided extended key (see BIP32).
+// Provided key is encrypting with the passphrase.
+func (am *Manager) NewAccountUsingExtendedKey(k *extkeys.ExtendedKey, passphrase string, w bool) (Account, error) {
+	if !k.IsPrivate {
+		return Account{}, fmt.Errorf("failed creating account using public key")
+	}
+
+	privateKeyECDSA := k.ToECDSA()
+	key := &Key{
+		Id:         uuid.NewRandom(),
+		Address:    crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
+		PrivateKey: privateKeyECDSA,
+	}
+
+	key.WhisperEnabled = w
+	account := Account{Address: key.Address, File: am.keyStore.JoinPath(keyFileName(key.Address))}
+	if err := am.keyStore.StoreKey(account.File, key, passphrase); err != nil {
+		zeroKey(key.PrivateKey)
+		return Account{}, err
+	}
+
+	// Add the account to the cache immediately rather
+	// than waiting for file system notifications to pick it up.
+	am.cache.add(account)
+
 	return account, nil
 }
 
