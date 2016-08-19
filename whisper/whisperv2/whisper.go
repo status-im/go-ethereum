@@ -65,7 +65,8 @@ type Whisper struct {
 	protocol p2p.Protocol
 	filters  *filter.Filters
 
-	keys map[string]*ecdsa.PrivateKey
+	keys   map[string]*ecdsa.PrivateKey
+	keysMu sync.RWMutex // Mutex to sync identity keys
 
 	messages    map[common.Hash]*Envelope // Pool of messages currently tracked by this node
 	expirations map[uint32]*set.SetNonTS  // Message expiration pool (TODO: something lighter)
@@ -130,7 +131,9 @@ func (self *Whisper) NewIdentity() *ecdsa.PrivateKey {
 	if err != nil {
 		panic(err)
 	}
+	self.keysMu.Lock()
 	self.keys[string(crypto.FromECDSAPub(&key.PublicKey))] = key
+	self.keysMu.Unlock()
 
 	return key
 }
@@ -138,22 +141,48 @@ func (self *Whisper) NewIdentity() *ecdsa.PrivateKey {
 // HasIdentity checks if the the whisper node is configured with the private key
 // of the specified public pair.
 func (self *Whisper) HasIdentity(key *ecdsa.PublicKey) bool {
+	self.keysMu.RLock()
+	defer self.keysMu.RUnlock()
+
 	return self.keys[string(crypto.FromECDSAPub(key))] != nil
 }
 
 // GetIdentity retrieves the private key of the specified public identity.
 func (self *Whisper) GetIdentity(key *ecdsa.PublicKey) *ecdsa.PrivateKey {
+	self.keysMu.RLock()
+	defer self.keysMu.RUnlock()
+
 	return self.keys[string(crypto.FromECDSAPub(key))]
 }
 
 // InjectIdentity injects a manually added identity/key pair into the whisper keys
 func (self *Whisper) InjectIdentity(key *ecdsa.PrivateKey) error {
+	if self.HasIdentity(&key.PublicKey) { // no need to re-inject
+		return nil
+	}
+
+	self.keysMu.Lock()
+	self.keys = make(map[string]*ecdsa.PrivateKey) // reset key store
 	self.keys[string(crypto.FromECDSAPub(&key.PublicKey))] = key
+	self.keysMu.Unlock()
 	if _, ok := self.keys[string(crypto.FromECDSAPub(&key.PublicKey))]; !ok {
 		return fmt.Errorf("key insert into keys map failed")
 	}
 
 	glog.V(logger.Info).Infof("Injected identity into whisper: %s\n", common.ToHex(crypto.FromECDSAPub(&key.PublicKey)))
+	return nil
+}
+
+// ClearIdentities clears the current whisper identities in memory
+func (self *Whisper) ClearIdentities() error {
+	self.keysMu.Lock()
+	defer self.keysMu.Unlock()
+
+	self.keys = make(map[string]*ecdsa.PrivateKey)
+	if len(self.keys) != 0 {
+		return fmt.Errorf("could not clear keys map")
+	}
+
 	return nil
 }
 
@@ -305,6 +334,9 @@ func (self *Whisper) postEvent(envelope *Envelope) {
 // returning the decrypted message and the key used to achieve it. If not keys
 // are configured, open will return the payload as if non encrypted.
 func (self *Whisper) open(envelope *Envelope) *Message {
+	self.keysMu.RLock()
+	defer self.keysMu.RUnlock()
+
 	// Short circuit if no identity is set, and assume clear-text
 	if len(self.keys) == 0 {
 		if message, err := envelope.Open(nil); err == nil {
