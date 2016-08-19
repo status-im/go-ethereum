@@ -1199,7 +1199,7 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Sen
 
 // CompleteQueuedTransaction creates a transaction by unpacking queued transaction, signs it and submits to the
 // transaction pool.
-func (s *PublicTransactionPoolAPI) CompleteQueuedTransaction(ctx context.Context, args SendTxArgs) (common.Hash, error) {
+func (s *PublicTransactionPoolAPI) CompleteQueuedTransaction(ctx context.Context, args SendTxArgs, passphrase string) (common.Hash, error) {
 	// Set some sanity defaults and terminate on failure
 	if err := args.setDefaults(ctx, s.b); err != nil {
 		return common.Hash{}, err
@@ -1218,7 +1218,7 @@ func (s *PublicTransactionPoolAPI) CompleteQueuedTransaction(ctx context.Context
 	if config := s.b.ChainConfig(); config.IsEIP155(s.b.CurrentBlock().Number()) {
 		chainID = config.ChainId
 	}
-	signed, err := wallet.SignTx(account, tx, chainID)
+	signed, err := wallet.SignTxWithPassphrase(account, passphrase, tx, chainID)
 	if err != nil {
 		return common.Hash{}, err
 	}
