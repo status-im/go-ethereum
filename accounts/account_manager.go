@@ -34,6 +34,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/status-im/status-go/extkeys"
 )
 
 var (
@@ -111,6 +112,11 @@ func (am *Manager) HasAddress(addr common.Address) bool {
 // Accounts returns all key files present in the directory.
 func (am *Manager) Accounts() []Account {
 	return am.cache.accounts()
+}
+
+// AccountDecryptedKey returns decrypted key for account (provided that password is correct).
+func (am *Manager) AccountDecryptedKey(a Account, auth string) (Account, *Key, error) {
+	return am.getDecryptedKey(a, auth)
 }
 
 // DeleteAccount deletes the key matched by account if the passphrase is correct.
@@ -325,6 +331,34 @@ func (am *Manager) ImportECDSA(priv *ecdsa.PrivateKey, passphrase string) (Accou
 	return am.importKey(key, passphrase)
 }
 
+// ImportExtendedKey stores ECDSA key (obtained from extended key) along with CKD#2 (root for sub-accounts)
+// If key file is not found, it is created. Key is encrypted with the given passphrase.
+func (am *Manager) ImportExtendedKey(extKey *extkeys.ExtendedKey, passphrase string) (Account, error) {
+	key, err := newKeyFromExtendedKey(extKey)
+	if err != nil {
+		zeroKey(key.PrivateKey)
+		return Account{}, err
+	}
+
+	// if account is already imported, return cached version
+	if am.cache.hasAddress(key.Address) {
+		a := Account{
+			Address: key.Address,
+		}
+		am.cache.maybeReload()
+		am.cache.mu.Lock()
+		a, err := am.cache.find(a)
+		am.cache.mu.Unlock()
+		if err != nil {
+			zeroKey(key.PrivateKey)
+			return a, err
+		}
+		return a, nil
+	}
+
+	return am.importKey(key, passphrase)
+}
+
 func (am *Manager) importKey(key *Key, passphrase string) (Account, error) {
 	a := Account{Address: key.Address, File: am.keyStore.JoinPath(keyFileName(key.Address))}
 	if err := am.keyStore.StoreKey(a.File, key, passphrase); err != nil {
@@ -343,6 +377,15 @@ func (am *Manager) Update(a Account, passphrase, newPassphrase string) error {
 	return am.keyStore.StoreKey(a.File, key, newPassphrase)
 }
 
+func (am *Manager) IncSubAccountIndex(a Account, passphrase string) error {
+	a, key, err := am.getDecryptedKey(a, passphrase)
+	if err != nil {
+		return err
+	}
+	key.SubAccountIndex++
+	return am.keyStore.StoreKey(a.File, key, passphrase)
+}
+
 // ImportPreSaleKey decrypts the given Ethereum presale wallet and stores
 // a key file in the key directory. The key file is encrypted with the same passphrase.
 func (am *Manager) ImportPreSaleKey(keyJSON []byte, passphrase string) (Account, error) {
@@ -356,6 +399,9 @@ func (am *Manager) ImportPreSaleKey(keyJSON []byte, passphrase string) (Account,
 
 // zeroKey zeroes a private key in memory.
 func zeroKey(k *ecdsa.PrivateKey) {
+	if k == nil {
+		return
+	}
 	b := k.D.Bits()
 	for i := range b {
 		b[i] = 0
