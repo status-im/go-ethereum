@@ -152,6 +152,8 @@ func (self *Whisper) InjectIdentity(key *ecdsa.PrivateKey) error {
 	if _, ok := self.keys[string(crypto.FromECDSAPub(&key.PublicKey))]; !ok {
 		return fmt.Errorf("key insert into keys map failed")
 	}
+
+	glog.V(logger.Info).Infof("Injected identity into whisper: %s\n", common.ToHex(crypto.FromECDSAPub(&key.PublicKey)))
 	return nil
 }
 
