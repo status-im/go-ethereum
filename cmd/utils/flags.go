@@ -40,6 +40,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethstats"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/les"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
@@ -414,6 +415,13 @@ var (
 		Value: 110,
 	}
 )
+
+// DebugSetup sets up the debugging parameters such that logs can be retrieved when a
+// node is started via importing go-ethereum packages, as opposed to starting via CLI
+func DebugSetup(ctx *cli.Context) error {
+	err := debug.Setup(ctx)
+	return err
+}
 
 // MakeDataDir retrieves the currently requested data directory, terminating
 // if none (or the empty string) is specified. If the node is starting a testnet,
