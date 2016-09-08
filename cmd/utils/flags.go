@@ -160,7 +160,7 @@ var (
 		Usage: "Enable light client mode",
 	}
 	NoDefSrvFlag = cli.BoolFlag{
-		Name: "nodefsrv",
+		Name:  "nodefsrv",
 		Usage: "Don't add default LES server (only for test version)",
 	}
 	LightServFlag = cli.IntFlag{
@@ -369,6 +369,10 @@ var (
 	NoDiscoverFlag = cli.BoolFlag{
 		Name:  "nodiscover",
 		Usage: "Disables the peer discovery mechanism (manual peer addition)",
+	}
+	NoEthFlag = cli.BoolFlag{
+		Name:  "noeth",
+		Usage: "Disable Ethereum Protocol",
 	}
 	WhisperEnabledFlag = cli.BoolFlag{
 		Name:  "shh",
@@ -669,6 +673,12 @@ func MakeNode(ctx *cli.Context, name, version string) *node.Node {
 // RegisterEthService configures eth.Ethereum from command line flags and adds it to the
 // given node.
 func RegisterEthService(ctx *cli.Context, stack *node.Node, relconf release.Config, extra []byte) {
+	ethDisabled := ctx.GlobalBool(NoEthFlag.Name)
+	if ethDisabled {
+		glog.V(logger.Info).Infof("Ethereum service registration by-passed (--%s flag used)\n", NoEthFlag.Name)
+		return
+	}
+
 	// Avoid conflicting network flags
 	networks, netFlags := 0, []cli.BoolFlag{DevModeFlag, TestNetFlag, OlympicFlag}
 	for _, flag := range netFlags {
