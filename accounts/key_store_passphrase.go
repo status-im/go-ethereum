@@ -140,6 +140,7 @@ func EncryptKey(key *Key, auth string, scryptN, scryptP int) ([]byte, error) {
 		cryptoStruct,
 		key.Id.String(),
 		version,
+		key.WhisperEnabled,
 	}
 	return json.Marshal(encryptedKeyJSONV3)
 }
@@ -175,9 +176,10 @@ func DecryptKey(keyjson []byte, auth string) (*Key, error) {
 	}
 	key := crypto.ToECDSA(keyBytes)
 	return &Key{
-		Id:         uuid.UUID(keyId),
-		Address:    crypto.PubkeyToAddress(key.PublicKey),
-		PrivateKey: key,
+		Id:             uuid.UUID(keyId),
+		Address:        crypto.PubkeyToAddress(key.PublicKey),
+		PrivateKey:     key,
+		WhisperEnabled: m["whisperenabled"].(bool),
 	}, nil
 }
 
