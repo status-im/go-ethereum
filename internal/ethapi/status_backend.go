@@ -22,7 +22,7 @@ type StatusBackend struct {
 func NewStatusBackend(apiBackend Backend) *StatusBackend {
 	glog.V(logger.Info).Infof("Status backend service started")
 	backend := &StatusBackend{
-		eapi:    NewPublicEthereumAPI(apiBackend, nil, nil),
+		eapi:    NewPublicEthereumAPI(apiBackend),
 		bcapi:   NewPublicBlockChainAPI(apiBackend),
 		txapi:   NewPublicTransactionPoolAPI(apiBackend),
 		txQueue: status.NewTransactionQueue(),
