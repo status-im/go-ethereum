@@ -68,10 +68,11 @@ type plainKeyJSON struct {
 }
 
 type encryptedKeyJSONV3 struct {
-	Address string     `json:"address"`
-	Crypto  cryptoJSON `json:"crypto"`
-	Id      string     `json:"id"`
-	Version int        `json:"version"`
+	Address        string     `json:"address"`
+	Crypto         cryptoJSON `json:"crypto"`
+	Id             string     `json:"id"`
+	Version        int        `json:"version"`
+	WhisperEnabled bool       `json:"whisperenabled"`
 }
 
 type encryptedKeyJSONV1 struct {
@@ -183,9 +184,7 @@ func storeNewKey(ks keyStore, rand io.Reader, auth string, w bool) (*Key, Accoun
 	if err != nil {
 		return nil, Account{}, err
 	}
-	if w {
-		key.WhisperEnabled = true
-	}
+	key.WhisperEnabled = w
 	a := Account{Address: key.Address, File: ks.JoinPath(keyFileName(key.Address))}
 	if err := ks.StoreKey(a.File, key, auth); err != nil {
 		zeroKey(key.PrivateKey)
