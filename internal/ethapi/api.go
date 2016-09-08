@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/ethash"
@@ -43,6 +44,7 @@ import (
 )
 
 const defaultGas = uint64(90000)
+const defaultTxQueueCap = int(5)
 
 // PublicEthereumAPI provides an API to access Ethereum related information.
 // It offers only methods that operate on public data that is freely available to anyone.
@@ -317,7 +319,7 @@ func NewPublicBlockChainAPI(b Backend) *PublicBlockChainAPI {
 
 // BlockNumber returns the block number of the chain head.
 func (s *PublicBlockChainAPI) BlockNumber() *big.Int {
-	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber)  // latest header should always be available
+	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
 	return header.Number
 }
 
@@ -766,12 +768,26 @@ func newRPCTransaction(b *types.Block, txHash common.Hash) (*RPCTransaction, err
 
 // PublicTransactionPoolAPI exposes methods for the RPC interface
 type PublicTransactionPoolAPI struct {
-	b Backend
+	b       Backend
+	txQueue chan QueuedTx
 }
+
+var txSingletonQueue chan QueuedTx
 
 // NewPublicTransactionPoolAPI creates a new RPC service with methods specific for the transaction pool.
 func NewPublicTransactionPoolAPI(b Backend) *PublicTransactionPoolAPI {
-	return &PublicTransactionPoolAPI{b}
+	var once sync.Once
+	once.Do(func() {
+		if txSingletonQueue == nil {
+			glog.V(logger.Debug).Infof("Transaction queue (for status-go) inited")
+			txSingletonQueue = make(chan QueuedTx, defaultTxQueueCap)
+		}
+	})
+
+	return &PublicTransactionPoolAPI{
+		b:       b,
+		txQueue: txSingletonQueue,
+	}
 }
 
 func getTransaction(chainDb ethdb.Database, b Backend, txHash common.Hash) (*types.Transaction, bool, error) {
@@ -891,7 +907,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionByHash(ctx context.Context, txH
 
 // GetTransactionReceipt returns the transaction receipt for the given transaction hash.
 func (s *PublicTransactionPoolAPI) GetTransactionReceipt(txHash common.Hash) (map[string]interface{}, error) {
-//fmt.Println("API GetTransactionReceipt", txHash)	
+	//fmt.Println("API GetTransactionReceipt", txHash)
 	receipt := core.GetReceipt(s.b.ChainDb(), txHash)
 	if receipt == nil {
 		glog.V(logger.Debug).Infof("receipt not found for transaction %s", txHash.Hex())
@@ -899,14 +915,14 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(txHash common.Hash) (ma
 	}
 
 	tx, _, err := getTransaction(s.b.ChainDb(), s.b, txHash)
-//fmt.Println("getTransaction", err)
+	//fmt.Println("getTransaction", err)
 	if err != nil {
 		glog.V(logger.Debug).Infof("%v\n", err)
 		return nil, nil
 	}
 
 	txBlock, blockIndex, index, err := getTransactionBlockData(s.b.ChainDb(), txHash)
-//fmt.Println("getTransactionBlockData", txBlock, blockIndex, index, err)
+	//fmt.Println("getTransactionBlockData", txBlock, blockIndex, index, err)
 	if err != nil {
 		glog.V(logger.Debug).Infof("%v\n", err)
 		return nil, nil
@@ -1004,9 +1020,39 @@ func submitTransaction(ctx context.Context, b Backend, tx *types.Transaction, si
 	return signedTx.Hash(), nil
 }
 
-// SendTransaction creates a transaction for the given argument, sign it and submit it to the
-// transaction pool.
+// Queued Transaction is a container that holds context and arguments enough to complete the queued transaction.
+type QueuedTx struct {
+	Hash    common.Hash
+	Context context.Context
+	Args    SendTxArgs
+}
+
+func (s *PublicTransactionPoolAPI) GetTransactionQueue() (chan QueuedTx, error) {
+	return s.txQueue, nil
+}
+
+// SendTransaction queues transactions, to be fulfilled by CompleteQueuedTransaction()
 func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args SendTxArgs) (common.Hash, error) {
+	queuedTx := QueuedTx{
+		Hash:    common.Hash{},
+		Context: ctx,
+		Args:    args,
+	}
+
+	// populate transaction hash
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
+	queuedTx.Hash = common.BytesToHash(crypto.FromECDSA(key))
+
+	s.txQueue <- queuedTx
+	return queuedTx.Hash, nil
+}
+
+// CompleteQueuedTransaction creates a transaction by unpacking queued transaction, signs it and submits to the
+// transaction pool.
+func (s *PublicTransactionPoolAPI) CompleteQueuedTransaction(ctx context.Context, args SendTxArgs) (common.Hash, error) {
 	var err error
 	args, err = prepareSendTxArgs(ctx, args, s.b)
 	if err != nil {
