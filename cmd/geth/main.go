@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/ethereum/ethash"
-	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/console"
@@ -41,6 +40,7 @@ import (
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/release"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -156,6 +156,10 @@ participating.
 		utils.BlockchainVersionFlag,
 		utils.OlympicFlag,
 		utils.FastSyncFlag,
+		utils.LightModeFlag,
+		utils.NoDefSrvFlag,
+		utils.LightServFlag,
+		utils.LightPeersFlag,
 		utils.CacheFlag,
 		utils.LightKDFFlag,
 		utils.JSpathFlag,
@@ -174,6 +178,7 @@ participating.
 		utils.NATFlag,
 		utils.NatspecEnabledFlag,
 		utils.NoDiscoverFlag,
+		utils.NoEthFlag,
 		utils.NodeKeyFileFlag,
 		utils.NodeKeyHexFlag,
 		utils.RPCEnabledFlag,
@@ -244,6 +249,54 @@ func main() {
 	}
 }
 
+// geth is the main entry point into the system if no special subcommand is ran.
+// It creates a default node based on the command line arguments and runs it in
+// blocking mode, waiting for it to be shut down.
+func geth(ctx *cli.Context) error {
+	node := makeFullNode(ctx)
+	startNode(ctx, node)
+	node.Wait()
+	return nil
+}
+
+// initGenesis will initialise the given JSON format genesis file and writes it as
+// the zero'd block (i.e. genesis) or will fail hard if it can't succeed.
+func initGenesis(ctx *cli.Context) error {
+	genesisPath := ctx.Args().First()
+	if len(genesisPath) == 0 {
+		utils.Fatalf("must supply path to genesis JSON file")
+	}
+
+	chainDb, err := ethdb.NewLDBDatabase(filepath.Join(utils.MustMakeDataDir(ctx), utils.ChainDbName(ctx)), 0, 0)
+	if err != nil {
+		utils.Fatalf("could not open database: %v", err)
+	}
+
+	genesisFile, err := os.Open(genesisPath)
+	if err != nil {
+		utils.Fatalf("failed to read genesis file: %v", err)
+	}
+
+	block, err := core.WriteGenesisBlock(chainDb, genesisFile)
+	if err != nil {
+		utils.Fatalf("failed to write genesis block: %v", err)
+	}
+	glog.V(logger.Info).Infof("successfully wrote genesis block and/or chain rule set: %x", block.Hash())
+	return nil
+}
+
+func makeFullNode(ctx *cli.Context) *node.Node {
+	node := utils.MakeNode(ctx, clientIdentifier, verString)
+	utils.RegisterEthService(ctx, node, relConfig, makeDefaultExtra())
+	// Whisper must be explicitly enabled, but is auto-enabled in --dev mode.
+	shhEnabled := ctx.GlobalBool(utils.WhisperEnabledFlag.Name)
+	shhAutoEnabled := !ctx.GlobalIsSet(utils.WhisperEnabledFlag.Name) && ctx.GlobalIsSet(utils.DevModeFlag.Name)
+	if shhEnabled || shhAutoEnabled {
+		utils.RegisterShhService(node)
+	}
+	return node
+}
+
 func makeDefaultExtra() []byte {
 	var clientInfo = struct {
 		Version   uint
@@ -264,43 +317,6 @@ func makeDefaultExtra() []byte {
 	return extra
 }
 
-// geth is the main entry point into the system if no special subcommand is ran.
-// It creates a default node based on the command line arguments and runs it in
-// blocking mode, waiting for it to be shut down.
-func geth(ctx *cli.Context) error {
-	node := utils.MakeSystemNode(clientIdentifier, verString, relConfig, makeDefaultExtra(), ctx)
-	startNode(ctx, node)
-	node.Wait()
-
-	return nil
-}
-
-// initGenesis will initialise the given JSON format genesis file and writes it as
-// the zero'd block (i.e. genesis) or will fail hard if it can't succeed.
-func initGenesis(ctx *cli.Context) error {
-	genesisPath := ctx.Args().First()
-	if len(genesisPath) == 0 {
-		utils.Fatalf("must supply path to genesis JSON file")
-	}
-
-	chainDb, err := ethdb.NewLDBDatabase(filepath.Join(utils.MustMakeDataDir(ctx), "chaindata"), 0, 0)
-	if err != nil {
-		utils.Fatalf("could not open database: %v", err)
-	}
-
-	genesisFile, err := os.Open(genesisPath)
-	if err != nil {
-		utils.Fatalf("failed to read genesis file: %v", err)
-	}
-
-	block, err := core.WriteGenesisBlock(chainDb, genesisFile)
-	if err != nil {
-		utils.Fatalf("failed to write genesis block: %v", err)
-	}
-	glog.V(logger.Info).Infof("successfully wrote genesis block and/or chain rule set: %x", block.Hash())
-	return nil
-}
-
 // startNode boots up the system node and all registered protocols, after which
 // it unlocks any requested accounts, and starts the RPC/IPC interfaces and the
 // miner.
@@ -310,13 +326,33 @@ func startNode(ctx *cli.Context, stack *node.Node) {
 	// Start up the node itself
 	utils.StartNode(stack)
 
-	// Unlock any account specifically requested
-	var accman *accounts.Manager
-	if err := stack.Service(&accman); err != nil {
-		utils.Fatalf("ethereum service not running: %v", err)
-	}
-	passwords := utils.MakePasswordList(ctx)
+	if ctx.GlobalBool(utils.LightModeFlag.Name) && !ctx.GlobalBool(utils.NoDefSrvFlag.Name) {
+		// add default light server; test phase only
+		addPeer := func(url string) {
+			node, err := discover.ParseNode(url)
+			if err == nil {
+				stack.Server().AddPeer(node)
+			}
+		}
 
+		if ctx.GlobalBool(utils.OpposeDAOFork.Name) {
+			// Classic (Azure)
+			addPeer("enode://fc3d7b57e5d317946bf421411632ec98d5ffcbf94548cd7bc10088e4fef176670f8ec70280d301a9d0b22fe498203f62b323da15b3acc18b02a1fee2a06b7d3f@40.118.3.223:30305")
+		} else {
+			// MainNet (Azure)
+			addPeer("enode://feaf206a308a669a789be45f4dadcb351246051727f12415ad69e44f8080daf0569c10fe1d9944d245dd1f3e1c89cedda8ce03d7e3d5ed8975a35cad4b4f7ec1@40.118.3.223:30303")
+			// MainNet (John Gerryts @phonikg)
+			addPeer("enode://3cbd26f73513af0e789c55ea9efa6d259be2d5f6882bdb52740e21e01379287b652642a87207f1bc07c64aae3ab51ab566dede7588d6064022d40577fe59d5de@50.112.52.169:30300")
+		}
+		if ctx.GlobalBool(utils.TestNetFlag.Name) {
+			// TestNet (John Gerryts @phonikg)
+			addPeer("enode://7d00e8c27b2328e2008a9fc86e81afba22681fdac675b99805fa62cc29ee8a2a9d83f916f7661da6a6bd78155a430bb2bd7cec733ca9e700e236ec9c71d97e24@50.112.52.169:30301")
+		}
+	}
+
+	// Unlock any account specifically requested
+	accman := stack.AccountManager()
+	passwords := utils.MakePasswordList(ctx)
 	accounts := strings.Split(ctx.GlobalString(utils.UnlockedAccountFlag.Name), ",")
 	for i, account := range accounts {
 		if trimmed := strings.TrimSpace(account); trimmed != "" {

@@ -618,6 +618,37 @@ func (self *BlockChain) Rollback(chain []common.Hash) {
 	}
 }
 
+// SetReceiptsData computes all the non-consensus fields of the receipts
+func SetReceiptsData(block *types.Block, receipts types.Receipts) {
+	transactions, logIndex := block.Transactions(), uint(0)
+
+	for j := 0; j < len(receipts); j++ {
+		// The transaction hash can be retrieved from the transaction itself
+		receipts[j].TxHash = transactions[j].Hash()
+
+		// The contract address can be derived from the transaction itself
+		if MessageCreatesContract(transactions[j]) {
+			from, _ := transactions[j].From()
+			receipts[j].ContractAddress = crypto.CreateAddress(from, transactions[j].Nonce())
+		}
+		// The used gas can be calculated based on previous receipts
+		if j == 0 {
+			receipts[j].GasUsed = new(big.Int).Set(receipts[j].CumulativeGasUsed)
+		} else {
+			receipts[j].GasUsed = new(big.Int).Sub(receipts[j].CumulativeGasUsed, receipts[j-1].CumulativeGasUsed)
+		}
+		// The derived log fields can simply be set from the block and transaction
+		for k := 0; k < len(receipts[j].Logs); k++ {
+			receipts[j].Logs[k].BlockNumber = block.NumberU64()
+			receipts[j].Logs[k].BlockHash = block.Hash()
+			receipts[j].Logs[k].TxHash = receipts[j].TxHash
+			receipts[j].Logs[k].TxIndex = uint(j)
+			receipts[j].Logs[k].Index = logIndex
+			logIndex++
+		}
+	}
+}
+
 // InsertReceiptChain attempts to complete an already existing header chain with
 // transaction and receipt data.
 func (self *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain []types.Receipts) (int, error) {
@@ -659,32 +690,7 @@ func (self *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain
 				continue
 			}
 			// Compute all the non-consensus fields of the receipts
-			transactions, logIndex := block.Transactions(), uint(0)
-			for j := 0; j < len(receipts); j++ {
-				// The transaction hash can be retrieved from the transaction itself
-				receipts[j].TxHash = transactions[j].Hash()
-
-				// The contract address can be derived from the transaction itself
-				if MessageCreatesContract(transactions[j]) {
-					from, _ := transactions[j].From()
-					receipts[j].ContractAddress = crypto.CreateAddress(from, transactions[j].Nonce())
-				}
-				// The used gas can be calculated based on previous receipts
-				if j == 0 {
-					receipts[j].GasUsed = new(big.Int).Set(receipts[j].CumulativeGasUsed)
-				} else {
-					receipts[j].GasUsed = new(big.Int).Sub(receipts[j].CumulativeGasUsed, receipts[j-1].CumulativeGasUsed)
-				}
-				// The derived log fields can simply be set from the block and transaction
-				for k := 0; k < len(receipts[j].Logs); k++ {
-					receipts[j].Logs[k].BlockNumber = block.NumberU64()
-					receipts[j].Logs[k].BlockHash = block.Hash()
-					receipts[j].Logs[k].TxHash = receipts[j].TxHash
-					receipts[j].Logs[k].TxIndex = uint(j)
-					receipts[j].Logs[k].Index = logIndex
-					logIndex++
-				}
-			}
+			SetReceiptsData(block, receipts)
 			// Write all the data out into the database
 			if err := WriteBody(self.chainDb, block.Hash(), block.NumberU64(), block.Body()); err != nil {
 				errs[index] = fmt.Errorf("failed to write block body: %v", err)
@@ -778,6 +784,14 @@ func (self *BlockChain) WriteBlock(block *types.Block) (status WriteStatus, err 
 	localTd := self.GetTd(self.currentBlock.Hash(), self.currentBlock.NumberU64())
 	externTd := new(big.Int).Add(block.Difficulty(), ptd)
 
+	// Irrelevant of the canonical status, write the block itself to the database
+	if err := self.hc.WriteTd(block.Hash(), block.NumberU64(), externTd); err != nil {
+		glog.Fatalf("failed to write block total difficulty: %v", err)
+	}
+	if err := WriteBlock(self.chainDb, block); err != nil {
+		glog.Fatalf("failed to write block contents: %v", err)
+	}
+
 	// If the total difficulty is higher than our known, add it to the canonical chain
 	// Second clause in the if statement reduces the vulnerability to selfish mining.
 	// Please refer to http://www.cs.cornell.edu/~ie53/publications/btcProcFC.pdf
@@ -788,18 +802,10 @@ func (self *BlockChain) WriteBlock(block *types.Block) (status WriteStatus, err 
 				return NonStatTy, err
 			}
 		}
-		// Insert the block as the new head of the chain
-		self.insert(block)
+		self.insert(block) // Insert the block as the new head of the chain
 		status = CanonStatTy
 	} else {
 		status = SideStatTy
-	}
-	// Irrelevant of the canonical status, write the block itself to the database
-	if err := self.hc.WriteTd(block.Hash(), block.NumberU64(), externTd); err != nil {
-		glog.Fatalf("failed to write block total difficulty: %v", err)
-	}
-	if err := WriteBlock(self.chainDb, block); err != nil {
-		glog.Fatalf("failed to write block contents: %v", err)
 	}
 
 	self.futureBlocks.Remove(block.Hash())

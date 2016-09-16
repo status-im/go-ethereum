@@ -40,6 +40,11 @@ web3._extend({
 			params: 1
 		}),
 		new web3._extend.Method({
+			name: 'removePeer',
+			call: 'admin_removePeer',
+			params: 1
+		}),
+		new web3._extend.Method({
 			name: 'exportChain',
 			call: 'admin_exportChain',
 			params: 1,
@@ -418,8 +423,8 @@ web3._extend({
 			params: 2
 		}),
 		new web3._extend.Method({
-			name: 'signAndSendTransaction',
-			call: 'personal_signAndSendTransaction',
+			name: 'sendTransaction',
+			call: 'personal_sendTransaction',
 			params: 2,
 			inputFormatter: [web3._extend.formatters.inputTransactionFormatter, null]
 		})

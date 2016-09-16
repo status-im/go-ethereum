@@ -70,6 +70,10 @@ var AppHelpFlagGroups = []flagGroup{
 			utils.DevModeFlag,
 			utils.IdentityFlag,
 			utils.FastSyncFlag,
+			utils.LightModeFlag,
+			utils.NoDefSrvFlag,
+			utils.LightServFlag,
+			utils.LightPeersFlag,
 			utils.LightKDFFlag,
 			utils.CacheFlag,
 			utils.BlockchainVersionFlag,
@@ -160,6 +164,7 @@ var AppHelpFlagGroups = []flagGroup{
 		Flags: []cli.Flag{
 			utils.WhisperEnabledFlag,
 			utils.NatspecEnabledFlag,
+			utils.NoEthFlag,
 		},
 	},
 	{

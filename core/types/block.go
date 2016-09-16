@@ -70,6 +70,15 @@ type Header struct {
 	Nonce       BlockNonce
 }
 
+func (h *Header) GetNumber() *big.Int     { return new(big.Int).Set(h.Number) }
+func (h *Header) GetGasLimit() *big.Int   { return new(big.Int).Set(h.GasLimit) }
+func (h *Header) GetGasUsed() *big.Int    { return new(big.Int).Set(h.GasUsed) }
+func (h *Header) GetDifficulty() *big.Int { return new(big.Int).Set(h.Difficulty) }
+func (h *Header) GetTime() *big.Int       { return new(big.Int).Set(h.Time) }
+func (h *Header) GetNumberU64() uint64    { return h.Number.Uint64() }
+func (h *Header) GetNonce() uint64        { return binary.BigEndian.Uint64(h.Nonce[:]) }
+func (h *Header) GetExtra() []byte        { return common.CopyBytes(h.Extra) }
+
 func (h *Header) Hash() common.Hash {
 	return rlpHash(h)
 }
@@ -112,6 +121,28 @@ func (h *Header) UnmarshalJSON(data []byte) error {
 	h.Time = ext.Time
 	h.Extra = []byte(ext.Extra)
 	return nil
+}
+
+func (h *Header) MarshalJSON() ([]byte, error) {
+	fields := map[string]interface{}{
+		"hash":             h.Hash(),
+		"parentHash":       h.ParentHash,
+		"number":           fmt.Sprintf("%#x", h.Number),
+		"nonce":            h.Nonce,
+		"receiptRoot":      h.ReceiptHash,
+		"logsBloom":        h.Bloom,
+		"sha3Uncles":       h.UncleHash,
+		"stateRoot":        h.Root,
+		"miner":            h.Coinbase,
+		"difficulty":       fmt.Sprintf("%#x", h.Difficulty),
+		"extraData":        fmt.Sprintf("0x%x", h.Extra),
+		"gasLimit":         fmt.Sprintf("%#x", h.GasLimit),
+		"gasUsed":          fmt.Sprintf("%#x", h.GasUsed),
+		"timestamp":        fmt.Sprintf("%#x", h.Time),
+		"transactionsRoot": h.TxHash,
+	}
+
+	return json.Marshal(fields)
 }
 
 func rlpHash(x interface{}) (h common.Hash) {

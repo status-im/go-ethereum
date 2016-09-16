@@ -39,6 +39,9 @@ import (
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/internal/debug"
+	"github.com/ethereum/go-ethereum/les"
+	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -152,6 +155,24 @@ var (
 	FastSyncFlag = cli.BoolFlag{
 		Name:  "fast",
 		Usage: "Enable fast syncing through state downloads",
+	}
+	LightModeFlag = cli.BoolFlag{
+		Name:  "light",
+		Usage: "Enable light client mode",
+	}
+	NoDefSrvFlag = cli.BoolFlag{
+		Name:  "nodefsrv",
+		Usage: "Don't add default LES server (only for test version)",
+	}
+	LightServFlag = cli.IntFlag{
+		Name:  "lightserv",
+		Usage: "Maximum percentage of time allowed for serving LES requests (0-90)",
+		Value: 20,
+	}
+	LightPeersFlag = cli.IntFlag{
+		Name:  "lightpeers",
+		Usage: "Maximum number of LES client peers",
+		Value: 10,
 	}
 	LightKDFFlag = cli.BoolFlag{
 		Name:  "lightkdf",
@@ -350,6 +371,10 @@ var (
 		Name:  "nodiscover",
 		Usage: "Disables the peer discovery mechanism (manual peer addition)",
 	}
+	NoEthFlag = cli.BoolFlag{
+		Name:  "noeth",
+		Usage: "Disable Ethereum Protocol",
+	}
 	WhisperEnabledFlag = cli.BoolFlag{
 		Name:  "shh",
 		Usage: "Enable Whisper",
@@ -399,6 +424,13 @@ var (
 	}
 )
 
+// DebugSetup sets up the debugging parameters such that logs can be retrieved when a
+// node is started via importing go-ethereum packages, as opposed to starting via CLI
+func DebugSetup(ctx *cli.Context) error {
+	err := debug.Setup(ctx)
+	return err
+}
+
 // MustMakeDataDir retrieves the currently requested data directory, terminating
 // if none (or the empty string) is specified. If the node is starting a testnet,
 // the a subdirectory of the specified datadir will be used.
@@ -411,16 +443,6 @@ func MustMakeDataDir(ctx *cli.Context) string {
 	}
 	Fatalf("Cannot determine default data directory, please set manually (--datadir)")
 	return ""
-}
-
-// MakeKeyStoreDir resolves the folder to use for storing the account keys from the
-// set command line flags, returning the explicitly requested path, or one inside
-// the data directory otherwise.
-func MakeKeyStoreDir(datadir string, ctx *cli.Context) string {
-	if path := ctx.GlobalString(KeyStoreDirFlag.Name); path != "" {
-		return path
-	}
-	return filepath.Join(datadir, "keystore")
 }
 
 // MakeIPCPath creates an IPC path configuration from the set command line flags,
@@ -555,20 +577,6 @@ func MakeDatabaseHandles() int {
 	return limit / 2 // Leave half for networking and other stuff
 }
 
-// MakeAccountManager creates an account manager from set command line flags.
-func MakeAccountManager(ctx *cli.Context) *accounts.Manager {
-	// Create the keystore crypto primitive, light if requested
-	scryptN := accounts.StandardScryptN
-	scryptP := accounts.StandardScryptP
-	if ctx.GlobalBool(LightKDFFlag.Name) {
-		scryptN = accounts.LightScryptN
-		scryptP = accounts.LightScryptP
-	}
-	datadir := MustMakeDataDir(ctx)
-	keydir := MakeKeyStoreDir(datadir, ctx)
-	return accounts.NewManager(keydir, scryptN, scryptP)
-}
-
 // MakeAddress converts an account specified directly as a hex encoded string or
 // a key index in the key store to an internal account representation.
 func MakeAddress(accman *accounts.Manager, account string) (accounts.Account, error) {
@@ -631,9 +639,54 @@ func MakePasswordList(ctx *cli.Context) []string {
 	return lines
 }
 
-// MakeSystemNode sets up a local node, configures the services to launch and
-// assembles the P2P protocol stack.
-func MakeSystemNode(name, version string, relconf release.Config, extra []byte, ctx *cli.Context) *node.Node {
+// MakeNode configures a node with no services from command line flags.
+func MakeNode(ctx *cli.Context, name, version string) *node.Node {
+	config := &node.Config{
+		DataDir:           MustMakeDataDir(ctx),
+		KeyStoreDir:       ctx.GlobalString(KeyStoreDirFlag.Name),
+		UseLightweightKDF: ctx.GlobalBool(LightKDFFlag.Name),
+		PrivateKey:        MakeNodeKey(ctx),
+		Name:              MakeNodeName(name, version, ctx),
+		NoDiscovery:       ctx.GlobalBool(NoDiscoverFlag.Name),
+		BootstrapNodes:    MakeBootstrapNodes(ctx),
+		ListenAddr:        MakeListenAddress(ctx),
+		NAT:               MakeNAT(ctx),
+		MaxPeers:          ctx.GlobalInt(MaxPeersFlag.Name),
+		MaxPendingPeers:   ctx.GlobalInt(MaxPendingPeersFlag.Name),
+		IPCPath:           MakeIPCPath(ctx),
+		HTTPHost:          MakeHTTPRpcHost(ctx),
+		HTTPPort:          ctx.GlobalInt(RPCPortFlag.Name),
+		HTTPCors:          ctx.GlobalString(RPCCORSDomainFlag.Name),
+		HTTPModules:       MakeRPCModules(ctx.GlobalString(RPCApiFlag.Name)),
+		WSHost:            MakeWSRpcHost(ctx),
+		WSPort:            ctx.GlobalInt(WSPortFlag.Name),
+		WSOrigins:         ctx.GlobalString(WSAllowedOriginsFlag.Name),
+		WSModules:         MakeRPCModules(ctx.GlobalString(WSApiFlag.Name)),
+	}
+	if ctx.GlobalBool(DevModeFlag.Name) {
+		if !ctx.GlobalIsSet(DataDirFlag.Name) {
+			config.DataDir = filepath.Join(os.TempDir(), "/ethereum_dev_mode")
+		}
+		// --dev mode does not need p2p networking.
+		config.MaxPeers = 0
+		config.ListenAddr = ":0"
+	}
+	stack, err := node.New(config)
+	if err != nil {
+		Fatalf("Failed to create the protocol stack: %v", err)
+	}
+	return stack
+}
+
+// RegisterEthService configures eth.Ethereum from command line flags and adds it to the
+// given node.
+func RegisterEthService(ctx *cli.Context, stack *node.Node, relconf release.Config, extra []byte) {
+	ethDisabled := ctx.GlobalBool(NoEthFlag.Name)
+	if ethDisabled {
+		glog.V(logger.Info).Infof("Ethereum service registration by-passed (--%s flag used)\n", NoEthFlag.Name)
+		return
+	}
+
 	// Avoid conflicting network flags
 	networks, netFlags := 0, []cli.BoolFlag{DevModeFlag, TestNetFlag, OlympicFlag}
 	for _, flag := range netFlags {
@@ -644,29 +697,6 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 	if networks > 1 {
 		Fatalf("The %v flags are mutually exclusive", netFlags)
 	}
-	// Configure the node's service container
-	stackConf := &node.Config{
-		DataDir:         MustMakeDataDir(ctx),
-		PrivateKey:      MakeNodeKey(ctx),
-		Name:            MakeNodeName(name, version, ctx),
-		NoDiscovery:     ctx.GlobalBool(NoDiscoverFlag.Name),
-		BootstrapNodes:  MakeBootstrapNodes(ctx),
-		ListenAddr:      MakeListenAddress(ctx),
-		NAT:             MakeNAT(ctx),
-		MaxPeers:        ctx.GlobalInt(MaxPeersFlag.Name),
-		MaxPendingPeers: ctx.GlobalInt(MaxPendingPeersFlag.Name),
-		IPCPath:         MakeIPCPath(ctx),
-		HTTPHost:        MakeHTTPRpcHost(ctx),
-		HTTPPort:        ctx.GlobalInt(RPCPortFlag.Name),
-		HTTPCors:        ctx.GlobalString(RPCCORSDomainFlag.Name),
-		HTTPModules:     MakeRPCModules(ctx.GlobalString(RPCApiFlag.Name)),
-		WSHost:          MakeWSRpcHost(ctx),
-		WSPort:          ctx.GlobalInt(WSPortFlag.Name),
-		WSOrigins:       ctx.GlobalString(WSAllowedOriginsFlag.Name),
-		WSModules:       MakeRPCModules(ctx.GlobalString(WSApiFlag.Name)),
-	}
-	// Configure the Ethereum service
-	accman := MakeAccountManager(ctx)
 
 	// initialise new random number generator
 	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -679,14 +709,17 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 	}
 
 	ethConf := &eth.Config{
+		Etherbase:               MakeEtherbase(stack.AccountManager(), ctx),
 		ChainConfig:             MustMakeChainConfig(ctx),
 		FastSync:                ctx.GlobalBool(FastSyncFlag.Name),
+		LightMode:               ctx.GlobalBool(LightModeFlag.Name),
+		NoDefSrv:                ctx.GlobalBool(NoDefSrvFlag.Name),
+		LightServ:               ctx.GlobalInt(LightServFlag.Name),
+		LightPeers:              ctx.GlobalInt(LightPeersFlag.Name),
 		BlockChainVersion:       ctx.GlobalInt(BlockchainVersionFlag.Name),
 		DatabaseCache:           ctx.GlobalInt(CacheFlag.Name),
 		DatabaseHandles:         MakeDatabaseHandles(),
 		NetworkId:               ctx.GlobalInt(NetworkIdFlag.Name),
-		AccountManager:          accman,
-		Etherbase:               MakeEtherbase(accman, ctx),
 		MinerThreads:            ctx.GlobalInt(MinerThreadsFlag.Name),
 		ExtraData:               MakeMinerExtra(extra, ctx),
 		NatSpec:                 ctx.GlobalBool(NatspecEnabledFlag.Name),
@@ -703,8 +736,6 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		SolcPath:                ctx.GlobalString(SolcPathFlag.Name),
 		AutoDAG:                 ctx.GlobalBool(AutoDAGFlag.Name) || ctx.GlobalBool(MiningEnabledFlag.Name),
 	}
-	// Configure the Whisper service
-	shhEnable := ctx.GlobalBool(WhisperEnabledFlag.Name)
 
 	// Override any default configs in dev mode or the test net
 	switch {
@@ -720,48 +751,32 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 		}
 		ethConf.Genesis = core.TestNetGenesisBlock()
 		state.StartingNonce = 1048576 // (2**20)
+		light.StartingNonce = 1048576 // (2**20)
 
 	case ctx.GlobalBool(DevModeFlag.Name):
-		// Override the base network stack configs
-		if !ctx.GlobalIsSet(DataDirFlag.Name) {
-			stackConf.DataDir = filepath.Join(os.TempDir(), "/ethereum_dev_mode")
-		}
-		if !ctx.GlobalIsSet(MaxPeersFlag.Name) {
-			stackConf.MaxPeers = 0
-		}
-		if !ctx.GlobalIsSet(ListenPortFlag.Name) {
-			stackConf.ListenAddr = ":0"
-		}
-		// Override the Ethereum protocol configs
 		ethConf.Genesis = core.OlympicGenesisBlock()
 		if !ctx.GlobalIsSet(GasPriceFlag.Name) {
 			ethConf.GasPrice = new(big.Int)
 		}
-		if !ctx.GlobalIsSet(WhisperEnabledFlag.Name) {
-			shhEnable = true
-		}
 		ethConf.PowTest = true
 	}
-	// Assemble and return the protocol stack
-	stack, err := node.New(stackConf)
-	if err != nil {
-		Fatalf("Failed to create the protocol stack: %v", err)
-	}
 
-	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
-		return accman, nil
-	}); err != nil {
-		Fatalf("Failed to register the account manager service: %v", err)
-	}
-
-	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
-		return eth.New(ctx, ethConf)
-	}); err != nil {
-		Fatalf("Failed to register the Ethereum service: %v", err)
-	}
-	if shhEnable {
-		if err := stack.Register(func(*node.ServiceContext) (node.Service, error) { return whisper.New(), nil }); err != nil {
-			Fatalf("Failed to register the Whisper service: %v", err)
+	if ethConf.LightMode {
+		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
+			return les.New(ctx, ethConf)
+		}); err != nil {
+			Fatalf("Failed to register the Ethereum light node service: %v", err)
+		}
+	} else {
+		if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
+			fullNode, err := eth.New(ctx, ethConf)
+			if fullNode != nil {
+				ls, _ := les.NewLesServer(fullNode, ethConf)
+				fullNode.AddLesServer(ls)
+			}
+			return fullNode, err
+		}); err != nil {
+			Fatalf("Failed to register the Ethereum full node service: %v", err)
 		}
 	}
 	if err := stack.Register(func(ctx *node.ServiceContext) (node.Service, error) {
@@ -769,7 +784,13 @@ func MakeSystemNode(name, version string, relconf release.Config, extra []byte, 
 	}); err != nil {
 		Fatalf("Failed to register the Geth release oracle service: %v", err)
 	}
-	return stack
+}
+
+// RegisterShhService configures whisper and adds it to the given node.
+func RegisterShhService(stack *node.Node) {
+	if err := stack.Register(func(*node.ServiceContext) (node.Service, error) { return whisper.New(), nil }); err != nil {
+		Fatalf("Failed to register the Whisper service: %v", err)
+	}
 }
 
 // SetupNetwork configures the system for either the main net or some test network.
@@ -855,15 +876,24 @@ func MustMakeChainConfigFromDb(ctx *cli.Context, db ethdb.Database) *core.ChainC
 	return config
 }
 
+func ChainDbName(ctx *cli.Context) string {
+	if ctx.GlobalBool(LightModeFlag.Name) {
+		return "lightchaindata"
+	} else {
+		return "chaindata"
+	}
+}
+
 // MakeChainDatabase open an LevelDB using the flags passed to the client and will hard crash if it fails.
 func MakeChainDatabase(ctx *cli.Context) ethdb.Database {
 	var (
 		datadir = MustMakeDataDir(ctx)
 		cache   = ctx.GlobalInt(CacheFlag.Name)
 		handles = MakeDatabaseHandles()
+		name    = ChainDbName(ctx)
 	)
 
-	chainDb, err := ethdb.NewLDBDatabase(filepath.Join(datadir, "chaindata"), cache, handles)
+	chainDb, err := ethdb.NewLDBDatabase(filepath.Join(datadir, name), cache, handles)
 	if err != nil {
 		Fatalf("Could not open database: %v", err)
 	}

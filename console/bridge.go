@@ -26,23 +26,29 @@ import (
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/robertkrimen/otto"
+	"golang.org/x/net/context"
 )
 
 // bridge is a collection of JavaScript utility methods to bride the .js runtime
 // environment and the Go RPC connection backing the remote method calls.
 type bridge struct {
-	client   rpc.Client   // RPC client to execute Ethereum requests through
+	client   *rpc.ClientRestartWrapper   // RPC client to execute Ethereum requests through
 	prompter UserPrompter // Input prompter to allow interactive user feedback
 	printer  io.Writer    // Output writer to serialize any display strings to
+	ctx context.Context
 }
 
 // newBridge creates a new JavaScript wrapper around an RPC client.
-func newBridge(client rpc.Client, prompter UserPrompter, printer io.Writer) *bridge {
+func newBridge(client *rpc.ClientRestartWrapper, prompter UserPrompter, printer io.Writer) *bridge {
 	return &bridge{
 		client:   client,
 		prompter: prompter,
 		printer:  printer,
 	}
+}
+
+func (b *bridge) setContext(ctx context.Context) {
+	b.ctx = ctx
 }
 
 // NewAccount is a wrapper around the personal.newAccount RPC method that uses a
@@ -188,88 +194,105 @@ func (b *bridge) SleepBlocks(call otto.FunctionCall) (response otto.Value) {
 	return otto.FalseValue()
 }
 
-// Send will serialize the first argument, send it to the node and returns the response.
+type jsonrpcCall struct {
+	Id     int64
+	Method string
+	Params []interface{}
+}
+
+// Send implements the web3 provider "send" method.
 func (b *bridge) Send(call otto.FunctionCall) (response otto.Value) {
-	// Ensure that we've got a batch request (array) or a single request (object)
-	arg := call.Argument(0).Object()
-	if arg == nil || (arg.Class() != "Array" && arg.Class() != "Object") {
-		throwJSException("request must be an object or array")
-	}
-	// Convert the otto VM arguments to Go values
-	data, err := call.Otto.Call("JSON.stringify", nil, arg)
+	// Remarshal the request into a Go value.
+	JSON, _ := call.Otto.Object("JSON")
+	reqVal, err := JSON.Call("stringify", call.Argument(0))
 	if err != nil {
 		throwJSException(err.Error())
 	}
-	reqjson, err := data.ToString()
-	if err != nil {
-		throwJSException(err.Error())
-	}
-
 	var (
-		reqs  []rpc.JSONRequest
-		batch = true
+		rawReq = []byte(reqVal.String())
+		reqs   []jsonrpcCall
+		batch  bool
 	)
-	if err = json.Unmarshal([]byte(reqjson), &reqs); err != nil {
-		// single request?
-		reqs = make([]rpc.JSONRequest, 1)
-		if err = json.Unmarshal([]byte(reqjson), &reqs[0]); err != nil {
-			throwJSException("invalid request")
-		}
+	if rawReq[0] == '[' {
+		batch = true
+		json.Unmarshal(rawReq, &reqs)
+	} else {
 		batch = false
+		reqs = make([]jsonrpcCall, 1)
+		json.Unmarshal(rawReq, &reqs[0])
 	}
-	// Iteratively execute the requests
-	call.Otto.Set("response_len", len(reqs))
-	call.Otto.Run("var ret_response = new Array(response_len);")
 
-	for i, req := range reqs {
-		// Execute the RPC request and parse the reply
-		if err = b.client.Send(&req); err != nil {
-			return newErrorResponse(call, -32603, err.Error(), req.Id)
-		}
-		result := make(map[string]interface{})
-		if err = b.client.Recv(&result); err != nil {
-			return newErrorResponse(call, -32603, err.Error(), req.Id)
-		}
-		// Feed the reply back into the JavaScript runtime environment
-		id, _ := result["id"]
-		jsonver, _ := result["jsonrpc"]
+	// Execute the requests.
+	resps, _ := call.Otto.Object("new Array()")
+	for _, req := range reqs {
+		resp, _ := call.Otto.Object(`({"jsonrpc":"2.0"})`)
+		resp.Set("id", req.Id)
+		var result json.RawMessage
 
-		call.Otto.Set("ret_id", id)
-		call.Otto.Set("ret_jsonrpc", jsonver)
-		call.Otto.Set("response_idx", i)
+		client := b.client.Client()
+		errc := make(chan error, 1)
+		errc2 := make(chan error)
+		go func(){
+			if b.ctx != nil {
+				select {
+				case <-b.ctx.Done():
+					b.client.Restart()
+					errc2 <- b.ctx.Err()
+				case err := <-errc:
+					errc2 <- err
+				}
+			} else {
+				errc2 <- <-errc
+			}
+		}()
+		errc <- client.Call(&result, req.Method, req.Params...)
+		err = <-errc2
 
-		if res, ok := result["result"]; ok {
-			payload, _ := json.Marshal(res)
-			call.Otto.Set("ret_result", string(payload))
-			response, err = call.Otto.Run(`
-				ret_response[response_idx] = { jsonrpc: ret_jsonrpc, id: ret_id, result: JSON.parse(ret_result) };
-			`)
-			continue
+		switch err := err.(type) {
+		case nil:
+			if result == nil {
+				// Special case null because it is decoded as an empty
+				// raw message for some reason.
+				resp.Set("result", otto.NullValue())
+			} else {
+				resultVal, err := JSON.Call("parse", string(result))
+				if err != nil {
+					resp = newErrorResponse(call, -32603, err.Error(), &req.Id).Object()
+				} else {
+					resp.Set("result", resultVal)
+				}
+			}
+		case rpc.Error:
+			resp.Set("error", map[string]interface{}{
+				"code":    err.ErrorCode(),
+				"message": err.Error(),
+			})
+		default:
+			resp = newErrorResponse(call, -32603, err.Error(), &req.Id).Object()
 		}
-		if res, ok := result["error"]; ok {
-			payload, _ := json.Marshal(res)
-			call.Otto.Set("ret_result", string(payload))
-			response, err = call.Otto.Run(`
-				ret_response[response_idx] = { jsonrpc: ret_jsonrpc, id: ret_id, error: JSON.parse(ret_result) };
-			`)
-			continue
-		}
-		return newErrorResponse(call, -32603, fmt.Sprintf("Invalid response"), new(int64))
+		resps.Call("push", resp)
 	}
-	// Convert single requests back from batch ones
-	if !batch {
-		call.Otto.Run("ret_response = ret_response[0];")
+
+	// Return the responses either to the callback (if supplied)
+	// or directly as the return value.
+	if batch {
+		response = resps.Value()
+	} else {
+		response, _ = resps.Get("0")
 	}
-	// Execute any registered callbacks
-	if call.Argument(1).IsObject() {
-		call.Otto.Set("callback", call.Argument(1))
-		call.Otto.Run(`
-		if (Object.prototype.toString.call(callback) == '[object Function]') {
-			callback(null, ret_response);
-		}
-		`)
+	if fn := call.Argument(1); fn.Class() == "Function" {
+		fn.Call(otto.NullValue(), otto.NullValue(), response)
+		return otto.UndefinedValue()
 	}
-	return
+	return response
+}
+
+func newErrorResponse(call otto.FunctionCall, code int, msg string, id interface{}) otto.Value {
+	// Bundle the error into a JSON RPC call response
+	m := map[string]interface{}{"version": "2.0", "id": id, "error": map[string]interface{}{"code": code, msg: msg}}
+	res, _ := json.Marshal(m)
+	val, _ := call.Otto.Run("(" + string(res) + ")")
+	return val
 }
 
 // throwJSException panics on an otto.Value. The Otto VM will recover from the
@@ -280,38 +303,4 @@ func throwJSException(msg interface{}) otto.Value {
 		glog.V(logger.Error).Infof("Failed to serialize JavaScript exception %v: %v", msg, err)
 	}
 	panic(val)
-}
-
-// newErrorResponse creates a JSON RPC error response for a specific request id,
-// containing the specified error code and error message. Beside returning the
-// error to the caller, it also sets the ret_error and ret_response JavaScript
-// variables.
-func newErrorResponse(call otto.FunctionCall, code int, msg string, id interface{}) (response otto.Value) {
-	// Bundle the error into a JSON RPC call response
-	res := rpc.JSONErrResponse{
-		Version: rpc.JSONRPCVersion,
-		Id:      id,
-		Error: rpc.JSONError{
-			Code:    code,
-			Message: msg,
-		},
-	}
-	// Serialize the error response into JavaScript variables
-	errObj, err := json.Marshal(res.Error)
-	if err != nil {
-		glog.V(logger.Error).Infof("Failed to serialize JSON RPC error: %v", err)
-	}
-	resObj, err := json.Marshal(res)
-	if err != nil {
-		glog.V(logger.Error).Infof("Failed to serialize JSON RPC error response: %v", err)
-	}
-
-	if _, err = call.Otto.Run("ret_error = " + string(errObj)); err != nil {
-		glog.V(logger.Error).Infof("Failed to set `ret_error` to the occurred error: %v", err)
-	}
-	resVal, err := call.Otto.Run("ret_response = " + string(resObj))
-	if err != nil {
-		glog.V(logger.Error).Infof("Failed to set `ret_response` to the JSON RPC response: %v", err)
-	}
-	return resVal
 }

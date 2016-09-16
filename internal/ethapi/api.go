@@ -30,17 +30,18 @@ import (
 	"github.com/ethereum/ethash"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/compiler"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/les/status"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/pborman/uuid"
 	"github.com/syndtr/goleveldb/leveldb"
 	"golang.org/x/net/context"
 )
@@ -50,52 +51,17 @@ const defaultGas = uint64(90000)
 // PublicEthereumAPI provides an API to access Ethereum related information.
 // It offers only methods that operate on public data that is freely available to anyone.
 type PublicEthereumAPI struct {
-	b        Backend
-	solcPath *string
-	solc     **compiler.Solidity
+	b Backend
 }
 
 // NewPublicEthereumAPI creates a new Etheruem protocol API.
-func NewPublicEthereumAPI(b Backend, solcPath *string, solc **compiler.Solidity) *PublicEthereumAPI {
-	return &PublicEthereumAPI{b, solcPath, solc}
+func NewPublicEthereumAPI(b Backend) *PublicEthereumAPI {
+	return &PublicEthereumAPI{b}
 }
 
 // GasPrice returns a suggestion for a gas price.
 func (s *PublicEthereumAPI) GasPrice(ctx context.Context) (*big.Int, error) {
 	return s.b.SuggestPrice(ctx)
-}
-
-func (s *PublicEthereumAPI) getSolc() (*compiler.Solidity, error) {
-	var err error
-	solc := *s.solc
-	if solc == nil {
-		solc, err = compiler.New(*s.solcPath)
-	}
-	return solc, err
-}
-
-// GetCompilers returns the collection of available smart contract compilers
-func (s *PublicEthereumAPI) GetCompilers() ([]string, error) {
-	solc, err := s.getSolc()
-	if err == nil && solc != nil {
-		return []string{"Solidity"}, nil
-	}
-
-	return []string{}, nil
-}
-
-// CompileSolidity compiles the given solidity source
-func (s *PublicEthereumAPI) CompileSolidity(source string) (map[string]*compiler.Contract, error) {
-	solc, err := s.getSolc()
-	if err != nil {
-		return nil, err
-	}
-
-	if solc == nil {
-		return nil, errors.New("solc (solidity compiler) not found")
-	}
-
-	return solc.Compile(source)
 }
 
 // ProtocolVersion returns the current Ethereum protocol version this node supports
@@ -263,8 +229,8 @@ func (s *PrivateAccountAPI) ListAccounts() []common.Address {
 }
 
 // NewAccount will create a new account and returns the address for the new account.
-func (s *PrivateAccountAPI) NewAccount(password string) (common.Address, error) {
-	acc, err := s.am.NewAccount(password)
+func (s *PrivateAccountAPI) NewAccount(password string, w bool) (common.Address, error) {
+	acc, err := s.am.NewAccount(password, w)
 	if err == nil {
 		return acc.Address, nil
 	}
@@ -303,10 +269,10 @@ func (s *PrivateAccountAPI) LockAccount(addr common.Address) bool {
 	return s.am.Lock(addr) == nil
 }
 
-// SignAndSendTransaction will create a transaction from the given arguments and
+// SendTransaction will create a transaction from the given arguments and
 // tries to sign it with the key associated with args.To. If the given passwd isn't
 // able to decrypt the key it fails.
-func (s *PrivateAccountAPI) SignAndSendTransaction(ctx context.Context, args SendTxArgs, passwd string) (common.Hash, error) {
+func (s *PrivateAccountAPI) SendTransaction(ctx context.Context, args SendTxArgs, passwd string) (common.Hash, error) {
 	var err error
 	args, err = prepareSendTxArgs(ctx, args, s.b)
 	if err != nil {
@@ -336,52 +302,34 @@ func (s *PrivateAccountAPI) SignAndSendTransaction(ctx context.Context, args Sen
 	return submitTransaction(ctx, s.b, tx, signature)
 }
 
+// SignAndSendTransaction was renamed to SendTransaction. This method is deprecated
+// and will be removed in the future. It primary goal is to give clients time to update.
+func (s *PrivateAccountAPI) SignAndSendTransaction(ctx context.Context, args SendTxArgs, passwd string) (common.Hash, error) {
+	return s.SendTransaction(ctx, args, passwd)
+}
+
 // PublicBlockChainAPI provides an API to access the Ethereum blockchain.
 // It offers only methods that operate on public data that is freely available to anyone.
 type PublicBlockChainAPI struct {
-	b                       Backend
-	muNewBlockSubscriptions sync.Mutex                             // protects newBlocksSubscriptions
-	newBlockSubscriptions   map[string]func(core.ChainEvent) error // callbacks for new block subscriptions
+	b Backend
 }
 
 // NewPublicBlockChainAPI creates a new Etheruem blockchain API.
 func NewPublicBlockChainAPI(b Backend) *PublicBlockChainAPI {
-	api := &PublicBlockChainAPI{
-		b: b,
-		newBlockSubscriptions: make(map[string]func(core.ChainEvent) error),
-	}
-
-	go api.subscriptionLoop()
-
-	return api
-}
-
-// subscriptionLoop reads events from the global event mux and creates notifications for the matched subscriptions.
-func (s *PublicBlockChainAPI) subscriptionLoop() {
-	sub := s.b.EventMux().Subscribe(core.ChainEvent{})
-	for event := range sub.Chan() {
-		if chainEvent, ok := event.Data.(core.ChainEvent); ok {
-			s.muNewBlockSubscriptions.Lock()
-			for id, notifyOf := range s.newBlockSubscriptions {
-				if notifyOf(chainEvent) == rpc.ErrNotificationNotFound {
-					delete(s.newBlockSubscriptions, id)
-				}
-			}
-			s.muNewBlockSubscriptions.Unlock()
-		}
-	}
+	return &PublicBlockChainAPI{b}
 }
 
 // BlockNumber returns the block number of the chain head.
 func (s *PublicBlockChainAPI) BlockNumber() *big.Int {
-	return s.b.HeaderByNumber(rpc.LatestBlockNumber).Number
+	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
+	return header.Number
 }
 
 // GetBalance returns the amount of wei for the given address in the state of the
 // given block number. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta
 // block numbers are also allowed.
 func (s *PublicBlockChainAPI) GetBalance(ctx context.Context, address common.Address, blockNr rpc.BlockNumber) (*big.Int, error) {
-	state, _, err := s.b.StateAndHeaderByNumber(blockNr)
+	state, _, err := s.b.StateAndHeaderByNumber(ctx, blockNr)
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -464,48 +412,9 @@ func (s *PublicBlockChainAPI) GetUncleCountByBlockHash(ctx context.Context, bloc
 	return nil
 }
 
-// NewBlocksArgs allows the user to specify if the returned block should include transactions and in which format.
-type NewBlocksArgs struct {
-	IncludeTransactions bool `json:"includeTransactions"`
-	TransactionDetails  bool `json:"transactionDetails"`
-}
-
-// NewBlocks triggers a new block event each time a block is appended to the chain. It accepts an argument which allows
-// the caller to specify whether the output should contain transactions and in what format.
-func (s *PublicBlockChainAPI) NewBlocks(ctx context.Context, args NewBlocksArgs) (rpc.Subscription, error) {
-	notifier, supported := rpc.NotifierFromContext(ctx)
-	if !supported {
-		return nil, rpc.ErrNotificationsUnsupported
-	}
-
-	// create a subscription that will remove itself when unsubscribed/cancelled
-	subscription, err := notifier.NewSubscription(func(subId string) {
-		s.muNewBlockSubscriptions.Lock()
-		delete(s.newBlockSubscriptions, subId)
-		s.muNewBlockSubscriptions.Unlock()
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	// add a callback that is called on chain events which will format the block and notify the client
-	s.muNewBlockSubscriptions.Lock()
-	s.newBlockSubscriptions[subscription.ID()] = func(e core.ChainEvent) error {
-		notification, err := s.rpcOutputBlock(e.Block, args.IncludeTransactions, args.TransactionDetails)
-		if err == nil {
-			return subscription.Notify(notification)
-		}
-		glog.V(logger.Warn).Info("unable to format block %v\n", err)
-		return nil
-	}
-	s.muNewBlockSubscriptions.Unlock()
-	return subscription, nil
-}
-
 // GetCode returns the code stored at the given address in the state for the given block number.
 func (s *PublicBlockChainAPI) GetCode(ctx context.Context, address common.Address, blockNr rpc.BlockNumber) (string, error) {
-	state, _, err := s.b.StateAndHeaderByNumber(blockNr)
+	state, _, err := s.b.StateAndHeaderByNumber(ctx, blockNr)
 	if state == nil || err != nil {
 		return "", err
 	}
@@ -520,7 +429,7 @@ func (s *PublicBlockChainAPI) GetCode(ctx context.Context, address common.Addres
 // block number. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta block
 // numbers are also allowed.
 func (s *PublicBlockChainAPI) GetStorageAt(ctx context.Context, address common.Address, key string, blockNr rpc.BlockNumber) (string, error) {
-	state, _, err := s.b.StateAndHeaderByNumber(blockNr)
+	state, _, err := s.b.StateAndHeaderByNumber(ctx, blockNr)
 	if state == nil || err != nil {
 		return "0x", err
 	}
@@ -562,7 +471,7 @@ type CallArgs struct {
 }
 
 func (s *PublicBlockChainAPI) doCall(ctx context.Context, args CallArgs, blockNr rpc.BlockNumber) (string, *big.Int, error) {
-	state, header, err := s.b.StateAndHeaderByNumber(blockNr)
+	state, header, err := s.b.StateAndHeaderByNumber(ctx, blockNr)
 	if state == nil || err != nil {
 		return "0x", common.Big0, err
 	}
@@ -682,7 +591,7 @@ func FormatLogs(structLogs []vm.StructLog) []StructLogRes {
 
 // TraceCall executes a call and returns the amount of gas, created logs and optionally returned values.
 func (s *PublicBlockChainAPI) TraceCall(ctx context.Context, args CallArgs, blockNr rpc.BlockNumber) (*ExecutionResult, error) {
-	state, header, err := s.b.StateAndHeaderByNumber(blockNr)
+	state, header, err := s.b.StateAndHeaderByNumber(ctx, blockNr)
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -861,39 +770,25 @@ func newRPCTransaction(b *types.Block, txHash common.Hash) (*RPCTransaction, err
 
 // PublicTransactionPoolAPI exposes methods for the RPC interface
 type PublicTransactionPoolAPI struct {
-	b               Backend
-	muPendingTxSubs sync.Mutex
-	pendingTxSubs   map[string]rpc.Subscription
+	b       Backend
+	txQueue chan *status.QueuedTx
 }
+
+var txSingletonQueue chan *status.QueuedTx
 
 // NewPublicTransactionPoolAPI creates a new RPC service with methods specific for the transaction pool.
 func NewPublicTransactionPoolAPI(b Backend) *PublicTransactionPoolAPI {
-	api := &PublicTransactionPoolAPI{
-		b:             b,
-		pendingTxSubs: make(map[string]rpc.Subscription),
-	}
-
-	go api.subscriptionLoop()
-
-	return api
-}
-
-// subscriptionLoop listens for events on the global event mux and creates notifications for subscriptions.
-func (s *PublicTransactionPoolAPI) subscriptionLoop() {
-	sub := s.b.EventMux().Subscribe(core.TxPreEvent{})
-	for event := range sub.Chan() {
-		tx := event.Data.(core.TxPreEvent)
-		if from, err := tx.Tx.FromFrontier(); err == nil {
-			if s.b.AccountManager().HasAddress(from) {
-				s.muPendingTxSubs.Lock()
-				for id, sub := range s.pendingTxSubs {
-					if sub.Notify(tx.Tx.Hash()) == rpc.ErrNotificationNotFound {
-						delete(s.pendingTxSubs, id)
-					}
-				}
-				s.muPendingTxSubs.Unlock()
-			}
+	var once sync.Once
+	once.Do(func() {
+		if txSingletonQueue == nil {
+			glog.V(logger.Info).Infof("Transaction queue inited (Public Transaction Pool API)")
+			txSingletonQueue = make(chan *status.QueuedTx, status.DefaultTxSendQueueCap)
 		}
+	})
+
+	return &PublicTransactionPoolAPI{
+		b:       b,
+		txQueue: txSingletonQueue,
 	}
 }
 
@@ -949,7 +844,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionByBlockHashAndIndex(ctx context
 
 // GetTransactionCount returns the number of transactions the given address has sent for the given block number
 func (s *PublicTransactionPoolAPI) GetTransactionCount(ctx context.Context, address common.Address, blockNr rpc.BlockNumber) (*rpc.HexNumber, error) {
-	state, _, err := s.b.StateAndHeaderByNumber(blockNr)
+	state, _, err := s.b.StateAndHeaderByNumber(ctx, blockNr)
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -1014,6 +909,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionByHash(ctx context.Context, txH
 
 // GetTransactionReceipt returns the transaction receipt for the given transaction hash.
 func (s *PublicTransactionPoolAPI) GetTransactionReceipt(txHash common.Hash) (map[string]interface{}, error) {
+	//fmt.Println("API GetTransactionReceipt", txHash)
 	receipt := core.GetReceipt(s.b.ChainDb(), txHash)
 	if receipt == nil {
 		glog.V(logger.Debug).Infof("receipt not found for transaction %s", txHash.Hex())
@@ -1021,12 +917,14 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(txHash common.Hash) (ma
 	}
 
 	tx, _, err := getTransaction(s.b.ChainDb(), s.b, txHash)
+	//fmt.Println("getTransaction", err)
 	if err != nil {
 		glog.V(logger.Debug).Infof("%v\n", err)
 		return nil, nil
 	}
 
 	txBlock, blockIndex, index, err := getTransactionBlockData(s.b.ChainDb(), txHash)
+	//fmt.Println("getTransactionBlockData", txBlock, blockIndex, index, err)
 	if err != nil {
 		glog.V(logger.Debug).Infof("%v\n", err)
 		return nil, nil
@@ -1124,9 +1022,43 @@ func submitTransaction(ctx context.Context, b Backend, tx *types.Transaction, si
 	return signedTx.Hash(), nil
 }
 
-// SendTransaction creates a transaction for the given argument, sign it and submit it to the
-// transaction pool.
+func (s *PublicTransactionPoolAPI) GetTransactionQueue() (chan *status.QueuedTx, error) {
+	return s.txQueue, nil
+}
+
+// SendTransaction queues transactions, to be fulfilled by CompleteQueuedTransaction()
 func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args SendTxArgs) (common.Hash, error) {
+	queuedTx := &status.QueuedTx{
+		Id:      status.QueuedTxId(uuid.New()),
+		Hash:    common.Hash{},
+		Context: ctx,
+		Args:    status.SendTxArgs(args),
+		Done:    make(chan struct{}, 1),
+	}
+
+	// send transaction to pending pool
+	s.txQueue <- queuedTx
+
+	// now wait up until transaction is complete (via call to CompleteQueuedTransaction) or timeout occurs
+	timeout := make(chan struct{}, 1)
+	go func() {
+		time.Sleep(status.DefaultTxSendCompletionTimeout * time.Second)
+		timeout <- struct{}{}
+	}()
+
+	select {
+	case <-queuedTx.Done:
+		return queuedTx.Hash, queuedTx.Err
+	case <-timeout:
+		return common.Hash{}, errors.New("transaction sending timed out")
+	}
+
+	return queuedTx.Hash, nil
+}
+
+// CompleteQueuedTransaction creates a transaction by unpacking queued transaction, signs it and submits to the
+// transaction pool.
+func (s *PublicTransactionPoolAPI) CompleteQueuedTransaction(ctx context.Context, args SendTxArgs, passphrase string) (common.Hash, error) {
 	var err error
 	args, err = prepareSendTxArgs(ctx, args, s.b)
 	if err != nil {
@@ -1148,7 +1080,7 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Sen
 		tx = types.NewTransaction(args.Nonce.Uint64(), *args.To, args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
 	}
 
-	signature, err := s.b.AccountManager().Sign(args.From, tx.SigHash().Bytes())
+	signature, err := s.b.AccountManager().SignWithPassphrase(args.From, passphrase, tx.SigHash().Bytes())
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -1347,31 +1279,6 @@ func (s *PublicTransactionPoolAPI) PendingTransactions() []*RPCTransaction {
 	return transactions
 }
 
-// NewPendingTransactions creates a subscription that is triggered each time a transaction enters the transaction pool
-// and is send from one of the transactions this nodes manages.
-func (s *PublicTransactionPoolAPI) NewPendingTransactions(ctx context.Context) (rpc.Subscription, error) {
-	notifier, supported := rpc.NotifierFromContext(ctx)
-	if !supported {
-		return nil, rpc.ErrNotificationsUnsupported
-	}
-
-	subscription, err := notifier.NewSubscription(func(id string) {
-		s.muPendingTxSubs.Lock()
-		delete(s.pendingTxSubs, id)
-		s.muPendingTxSubs.Unlock()
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	s.muPendingTxSubs.Lock()
-	s.pendingTxSubs[subscription.ID()] = subscription
-	s.muPendingTxSubs.Unlock()
-
-	return subscription, nil
-}
-
 // Resend accepts an existing transaction and a new gas price and limit. It will remove the given transaction from the
 // pool and reinsert it with the new gas price and limit.
 func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, tx *Tx, gasPrice, gasLimit *rpc.HexNumber) (common.Hash, error) {
@@ -1408,31 +1315,6 @@ func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, tx *Tx, gasPrice,
 	}
 
 	return common.Hash{}, fmt.Errorf("Transaction %#x not found", tx.Hash)
-}
-
-// PrivateAdminAPI is the collection of Etheruem APIs exposed over the private
-// admin endpoint.
-type PrivateAdminAPI struct {
-	b        Backend
-	solcPath *string
-	solc     **compiler.Solidity
-}
-
-// NewPrivateAdminAPI creates a new API definition for the private admin methods
-// of the Ethereum service.
-func NewPrivateAdminAPI(b Backend, solcPath *string, solc **compiler.Solidity) *PrivateAdminAPI {
-	return &PrivateAdminAPI{b, solcPath, solc}
-}
-
-// SetSolc sets the Solidity compiler path to be used by the node.
-func (api *PrivateAdminAPI) SetSolc(path string) (string, error) {
-	var err error
-	*api.solcPath = path
-	*api.solc, err = compiler.New(path)
-	if err != nil {
-		return "", err
-	}
-	return (*api.solc).Info(), nil
 }
 
 // PublicDebugAPI is the collection of Etheruem APIs exposed over the public
