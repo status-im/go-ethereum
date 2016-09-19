@@ -24,5 +24,4 @@ RUN \
 EXPOSE 8545
 EXPOSE 30303
 
-ENTRYPOINT ["/geth", "--lightkdf", "--light", "--shh"]
-# deliberately out: "--rpc", "--rpcaddr", "localhost", "--rpcport", "8545", "--rpcapi", "eth,net,web3,shh"
+ENTRYPOINT ["/geth"]
