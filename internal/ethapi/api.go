@@ -191,6 +191,11 @@ func NewPublicAccountAPI(am *accounts.Manager) *PublicAccountAPI {
 
 // Accounts returns the collection of accounts this node manages
 func (s *PublicAccountAPI) Accounts() []accounts.Account {
+	backend := GetStatusBackend()
+	if backend != nil {
+		return statusBackend.am.Accounts()
+	}
+
 	return s.am.Accounts()
 }
 
@@ -212,7 +217,14 @@ func NewPrivateAccountAPI(b Backend) *PrivateAccountAPI {
 
 // ListAccounts will return a list of addresses for accounts this node manages.
 func (s *PrivateAccountAPI) ListAccounts() []common.Address {
-	accounts := s.am.Accounts()
+	var accounts []accounts.Account
+	backend := GetStatusBackend()
+	if backend != nil {
+		accounts = statusBackend.am.Accounts()
+	} else {
+		accounts = s.am.Accounts()
+	}
+
 	addresses := make([]common.Address, len(accounts))
 	for i, acc := range accounts {
 		addresses[i] = acc.Address
