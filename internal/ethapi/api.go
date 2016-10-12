@@ -19,7 +19,6 @@ package ethapi
 import (
 	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -1141,23 +1140,27 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Sen
 		Context: ctx,
 		Args:    status.SendTxArgs(args),
 		Done:    make(chan struct{}, 1),
+		Discard: make(chan struct{}, 1),
 	}
 
 	// send transaction to pending pool
 	s.txQueue <- queuedTx
 
-	// now wait up until transaction is complete (via call to CompleteQueuedTransaction) or timeout occurs
-	timeout := make(chan struct{}, 1)
-	go func() {
-		time.Sleep(status.DefaultTxSendCompletionTimeout * time.Second)
-		timeout <- struct{}{}
-	}()
-
+	// now wait up until transaction is:
+	// - completed (via CompleteQueuedTransaction),
+	// - discarded (via DiscardQueuedTransaction)
+	// - or times out
+	backend := GetStatusBackend()
 	select {
 	case <-queuedTx.Done:
+		backend.NotifyOnQueuedTxReturn(queuedTx, queuedTx.Err)
 		return queuedTx.Hash, queuedTx.Err
-	case <-timeout:
-		return common.Hash{}, errors.New("transaction sending timed out")
+	case <-queuedTx.Discard:
+		backend.NotifyOnQueuedTxReturn(queuedTx, status.ErrQueuedTxDiscarded)
+		return queuedTx.Hash, queuedTx.Err
+	case <-time.After(status.DefaultTxSendCompletionTimeout * time.Second):
+		backend.NotifyOnQueuedTxReturn(queuedTx, status.ErrQueuedTxTimedOut)
+		return common.Hash{}, status.ErrQueuedTxTimedOut
 	}
 
 	return queuedTx.Hash, nil
