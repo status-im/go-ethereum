@@ -8,7 +8,7 @@ RUN \
   git clone --depth 1 --branch develop https://github.com/status-im/status-go.git /usr/lib/go/src/github.com/status-im/status-go && \
 
   # clone go-ethereum (and install everything)
-  git clone --depth 1 --branch status-light-stable https://github.com/status-im/go-ethereum && \
+  git clone --depth 1 --branch status-master https://github.com/status-im/go-ethereum && \
   (cd go-ethereum && make geth) && \
   cp go-ethereum/build/bin/geth /geth && \
   apk del go git make gcc musl-dev && \
