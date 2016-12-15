@@ -1232,8 +1232,28 @@ func (s *PublicTransactionPoolAPI) CompleteQueuedTransaction(ctx context.Context
 	if err != nil {
 		return common.Hash{}, err
 	}
-	// Assemble the transaction and sign with the wallet
-	tx := args.toTransaction()
+	// make sure that only account which created the tx can complete it
+	selectedAccountAddress := "0x0"
+	if address, ok := ctx.Value(status.SelectedAccountKey).(string); ok {
+		selectedAccountAddress = address
+	}
+	if args.From.Hex() != selectedAccountAddress {
+		glog.V(logger.Info).Infof("Failed to complete tx by %s (when logged in as %s)", args.From.Hex(), selectedAccountAddress)
+		return common.Hash{}, status.ErrInvalidCompleteTxSender
+	}
+
+	nonce, err := s.b.GetPoolNonce(ctx, args.From)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	args.Nonce = rpc.NewHexNumber(nonce)
+
+	var tx *types.Transaction
+	if args.To == nil {
+		tx = types.NewContractCreation(args.Nonce.Uint64(), args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
+	} else {
+		tx = types.NewTransaction(args.Nonce.Uint64(), *args.To, args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
+	}
 
 	var chainID *big.Int
 	if config := s.b.ChainConfig(); config.IsEIP155(s.b.CurrentBlock().Number()) {
