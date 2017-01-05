@@ -71,8 +71,8 @@ type SendTxArgs struct {
 	Gas      *hexutil.Big    `json:"gas"`
 	GasPrice *hexutil.Big    `json:"gasPrice"`
 	Value    *hexutil.Big    `json:"value"`
-	Data     string          `json:"data"`
-	Nonce    *hexutil.Big    `json:"nonce"`
+	Data     hexutil.Bytes   `json:"data"`
+	Nonce    *hexutil.Uint64 `json:"nonce"`
 }
 
 func NewTransactionQueue() *TxQueue {
