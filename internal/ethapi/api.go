@@ -19,6 +19,7 @@ package ethapi
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -1149,17 +1150,17 @@ func (s *PublicTransactionPoolAPI) CompleteQueuedTransaction(ctx context.Context
 	if err != nil {
 		return common.Hash{}, err
 	}
-	args.Nonce = rpc.NewHexNumber(nonce)
+	args.Nonce = (*hexutil.Uint64)(&nonce)
 
 	var tx *types.Transaction
 	if args.To == nil {
-		tx = types.NewContractCreation(args.Nonce.Uint64(), args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
+		tx = types.NewContractCreation(uint64(*args.Nonce), (*big.Int)(args.Value), (*big.Int)(args.Gas), (*big.Int)(args.GasPrice), args.Data)
 	} else {
-		tx = types.NewTransaction(args.Nonce.Uint64(), *args.To, args.Value.BigInt(), args.Gas.BigInt(), args.GasPrice.BigInt(), common.FromHex(args.Data))
+		tx = types.NewTransaction(uint64(*args.Nonce), *args.To, (*big.Int)(args.Value), (*big.Int)(args.Gas), (*big.Int)(args.GasPrice), args.Data)
 	}
 
 	signer := types.MakeSigner(s.b.ChainConfig(), s.b.CurrentBlock().Number())
-	signature, err := s.b.AccountManager().SignWithPassphrase(args.From, passphrase, tx.SigHash(signer).Bytes())
+	signature, err := s.b.AccountManager().SignWithPassphrase(accounts.Account{Address: args.From}, passphrase, tx.SigHash(signer).Bytes())
 	if err != nil {
 		return common.Hash{}, err
 	}
