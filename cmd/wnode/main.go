@@ -198,10 +198,11 @@ func initialize() {
 				utils.Fatalf("Failed to read Mail Server password: %s", err)
 			}
 		}
-		shh = whisper.NewWhisper(&mailServer)
+		shh = whisper.New()
+		shh.RegisterServer(&mailServer)
 		mailServer.Init(shh, *argDBPath, msPassword, *argServerPoW)
 	} else {
-		shh = whisper.NewWhisper(nil)
+		shh = whisper.New()
 	}
 
 	asymKey = shh.NewIdentity()
@@ -209,10 +210,15 @@ func initialize() {
 		nodeid = shh.NewIdentity()
 	}
 
+	maxPeers := 80
+	if *bootstrapMode {
+		maxPeers = 800
+	}
+
 	server = &p2p.Server{
 		Config: p2p.Config{
 			PrivateKey:     nodeid,
-			MaxPeers:       128,
+			MaxPeers:       maxPeers,
 			Name:           common.MakeName("whisper-go", "5.0"),
 			Protocols:      shh.Protocols(),
 			ListenAddr:     *argIP,
