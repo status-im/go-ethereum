@@ -21,7 +21,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
-	"net"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -58,6 +57,7 @@ type Swarm struct {
 	swapEnabled bool
 	lstore      *storage.LocalStore // local store, needs to store for releasing resources after node stopped
 	sfs         *fuse.SwarmFS       // need this to cleanup all the active mounts on node exit
+	httpHandler *httpapi.Server     // HTTP request handler processing API requests
 }
 
 type SwarmAPI struct {
@@ -201,16 +201,15 @@ func (self *Swarm) Start(srv *p2p.Server) error {
 
 	// start swarm http proxy server
 	if self.config.Port != "" {
-		addr := net.JoinHostPort(self.config.ListenAddr, self.config.Port)
-		go httpapi.StartHttpServer(self.api, &httpapi.ServerConfig{
-			Addr:       addr,
+		serverConfig := &httpapi.ServerConfig{
+			Addr:       ":" + self.config.Port,
 			CorsString: self.corsString,
-		})
-		log.Info(fmt.Sprintf("Swarm http proxy started on %v", addr))
-
-		if self.corsString != "" {
-			log.Debug(fmt.Sprintf("Swarm http proxy started with corsdomain: %v", self.corsString))
 		}
+		server, err := httpapi.StartHttpServer(self.api, serverConfig)
+		if err != nil {
+			return err
+		}
+		self.httpHandler = server
 	}
 
 	return nil
@@ -230,6 +229,13 @@ func (self *Swarm) Stop() error {
 		self.lstore.DbStore.Close()
 	}
 	self.sfs.Stop()
+
+	// stop swarm http proxy server
+	if self.httpHandler != nil {
+		self.httpHandler.StopHttpServer()
+		self.httpHandler = nil
+	}
+
 	return self.config.Save()
 }
 

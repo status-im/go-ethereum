@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -49,6 +50,9 @@ type Hive struct {
 	quit         chan bool
 	toggle       chan bool
 	more         chan bool
+
+	lock    sync.Mutex
+	running bool
 
 	// for testing only
 	swapEnabled bool
@@ -121,6 +125,12 @@ func (self *Hive) Addr() kademlia.Address {
 // connectPeer is a function to connect to a peer based on its NodeID or enode URL
 // there are called on the p2p.Server which runs on the node
 func (self *Hive) Start(id discover.NodeID, listenAddr func() string, connectPeer func(string) error) (err error) {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	if self.running {
+		return
+	}
+
 	self.toggle = make(chan bool)
 	self.more = make(chan bool)
 	self.quit = make(chan bool)
@@ -210,6 +220,12 @@ func (self *Hive) keepAlive() {
 }
 
 func (self *Hive) Stop() error {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	if !self.running {
+		return nil
+	}
+
 	// closing toggle channel quits the updateloop
 	close(self.quit)
 	return self.kad.Save(self.path, saveSync)

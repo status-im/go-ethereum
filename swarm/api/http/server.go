@@ -28,6 +28,7 @@ import (
 	"io/ioutil"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -55,7 +56,7 @@ type ServerConfig struct {
 // https://github.com/atom/electron/blob/master/docs/api/protocol.md
 
 // starts up http server
-func StartHttpServer(api *api.Api, config *ServerConfig) {
+func StartHttpServer(api *api.Api, config *ServerConfig) (*Server, error) {
 	var allowedOrigins []string
 	for _, domain := range strings.Split(config.CorsString, ",") {
 		allowedOrigins = append(allowedOrigins, strings.TrimSpace(domain))
@@ -66,17 +67,44 @@ func StartHttpServer(api *api.Api, config *ServerConfig) {
 		MaxAge:         600,
 		AllowedHeaders: []string{"*"},
 	})
-	hdlr := c.Handler(NewServer(api))
+	var (
+		listener net.Listener
+		err      error
+	)
+	if listener, err = net.Listen("tcp", config.Addr); err != nil {
+		return nil, err
+	}
 
-	go http.ListenAndServe(config.Addr, hdlr)
+	server := NewServer(api, config, listener)
+	handler := c.Handler(server)
+	httpServer := http.Server{Handler: hdlr}
+	go httpServer.Serve(listener)
+	log.Info(fmt.Sprintf("Swarm HTTP proxy started on localhost:%s", config.Addr))
+
+	return server, nil
 }
 
-func NewServer(api *api.Api) *Server {
-	return &Server{api}
+// StopHttpServer stops http server
+func (s *Server) StopHttpServer() {
+	if s.listener != nil {
+		s.listener.Close()
+		s.listener = nil
+		log.Info(fmt.Sprintf("Swarm HTTP proxy stopped on http://localhost:%s", s.config.Addr))
+	}
+}
+
+func NewServer(api *api.Api, config *ServerConfig, listener net.Listener) *Server {
+	return &Server{
+		api:      api,
+		config:   config,
+		listener: listener,
+	}
 }
 
 type Server struct {
-	api *api.Api
+	api      *api.Api
+	config   *ServerConfig
+	listener net.Listener // HTTP listener socket
 }
 
 // Request wraps http.Request and also includes the parsed bzz URI
