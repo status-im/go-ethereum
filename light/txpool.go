@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"runtime"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -315,6 +316,7 @@ func (pool *TxPool) eventLoop() {
 			pool.homestead = pool.config.IsHomestead(head.Number)
 			pool.signer = types.MakeSigner(pool.config, head.Number)
 			pool.mu.Unlock()
+			runtime.Gosched()
 		}
 	}
 }
