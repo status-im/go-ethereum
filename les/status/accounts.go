@@ -22,7 +22,7 @@ type AccountsFilterHandler func([]accounts.Account) []accounts.Account
 // Since status supports HD keys, the following list is returned:
 // [addressCDK#1, addressCKD#2->Child1, addressCKD#2->Child2, .. addressCKD#2->ChildN]
 func (d *AccountManager) Accounts() []accounts.Account {
-	accounts := d.am.Accounts()
+	accounts := d.am.Wallets()[0].Accounts()
 	if d.accountsFilterHandler != nil {
 		accounts = d.accountsFilterHandler(accounts)
 	}
