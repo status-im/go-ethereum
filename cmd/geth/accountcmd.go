@@ -267,7 +267,7 @@ func getWhisperYesNo(prompt string) bool {
 	return shhRes
 }
 
-func ambiguousAddrRecovery(ks *keystore.Manager, err *keystore.AmbiguousAddrError, auth string) accounts.Account {
+func ambiguousAddrRecovery(ks *keystore.KeyStore, err *keystore.AmbiguousAddrError, auth string) accounts.Account {
 	fmt.Printf("Multiple key files exist for address %x:\n", err.Addr)
 	for _, a := range err.Matches {
 		fmt.Println("  ", a.URL)
