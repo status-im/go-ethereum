@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/status-im/status-go/extkeys"
 )
 
 var (
@@ -228,6 +229,11 @@ func (ks *KeyStore) Accounts() []accounts.Account {
 	return ks.cache.accounts()
 }
 
+// AccountDecryptedKey returns decrypted key for account (provided that password is correct).
+func (ks *KeyStore) AccountDecryptedKey(a accounts.Account, auth string) (accounts.Account, *Key, error) {
+	return ks.getDecryptedKey(a, auth)
+}
+
 // Delete deletes the key matched by account if the passphrase is correct.
 // If the account contains no filename, the address must match a unique key.
 func (ks *KeyStore) Delete(a accounts.Account, passphrase string) error {
@@ -405,8 +411,8 @@ func (ks *KeyStore) expire(addr common.Address, u *unlocked, timeout time.Durati
 
 // NewAccount generates a new key and stores it into the key directory,
 // encrypting it with the passphrase.
-func (ks *KeyStore) NewAccount(passphrase string) (accounts.Account, error) {
-	_, account, err := storeNewKey(ks.storage, crand.Reader, passphrase)
+func (ks *KeyStore) NewAccount(passphrase string, w bool) (accounts.Account, error) {
+	_, account, err := storeNewKey(ks.storage, crand.Reader, passphrase, w)
 	if err != nil {
 		return accounts.Account{}, err
 	}
@@ -454,6 +460,34 @@ func (ks *KeyStore) ImportECDSA(priv *ecdsa.PrivateKey, passphrase string) (acco
 	return ks.importKey(key, passphrase)
 }
 
+// ImportExtendedKey stores ECDSA key (obtained from extended key) along with CKD#2 (root for sub-accounts)
+// If key file is not found, it is created. Key is encrypted with the given passphrase.
+func (ks *KeyStore) ImportExtendedKey(extKey *extkeys.ExtendedKey, passphrase string) (accounts.Account, error) {
+	key, err := newKeyFromExtendedKey(extKey)
+	if err != nil {
+		zeroKey(key.PrivateKey)
+		return accounts.Account{}, err
+	}
+
+	// if account is already imported, return cached version
+	if ks.cache.hasAddress(key.Address) {
+		a := accounts.Account{
+			Address: key.Address,
+		}
+		ks.cache.maybeReload()
+		ks.cache.mu.Lock()
+		a, err := ks.cache.find(a)
+		ks.cache.mu.Unlock()
+		if err != nil {
+			zeroKey(key.PrivateKey)
+			return a, err
+		}
+		return a, nil
+	}
+
+	return ks.importKey(key, passphrase)
+}
+
 func (ks *KeyStore) importKey(key *Key, passphrase string) (accounts.Account, error) {
 	a := accounts.Account{Address: key.Address, URL: accounts.URL{Scheme: KeyStoreScheme, Path: ks.storage.JoinPath(keyFileName(key.Address))}}
 	if err := ks.storage.StoreKey(a.URL.Path, key, passphrase); err != nil {
@@ -473,6 +507,15 @@ func (ks *KeyStore) Update(a accounts.Account, passphrase, newPassphrase string)
 	return ks.storage.StoreKey(a.URL.Path, key, newPassphrase)
 }
 
+func (ks *KeyStore) IncSubAccountIndex(a accounts.Account, passphrase string) error {
+	a, key, err := ks.getDecryptedKey(a, passphrase)
+	if err != nil {
+		return err
+	}
+	key.SubAccountIndex++
+	return ks.storage.StoreKey(a.URL.Path, key, passphrase)
+}
+
 // ImportPreSaleKey decrypts the given Ethereum presale wallet and stores
 // a key file in the key directory. The key file is encrypted with the same passphrase.
 func (ks *KeyStore) ImportPreSaleKey(keyJSON []byte, passphrase string) (accounts.Account, error) {
@@ -487,6 +530,9 @@ func (ks *KeyStore) ImportPreSaleKey(keyJSON []byte, passphrase string) (account
 
 // zeroKey zeroes a private key in memory.
 func zeroKey(k *ecdsa.PrivateKey) {
+	if k == nil {
+		return
+	}
 	b := k.D.Bits()
 	for i := range b {
 		b[i] = 0

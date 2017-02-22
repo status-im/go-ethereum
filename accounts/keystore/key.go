@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/pborman/uuid"
+	"github.com/status-im/status-go/extkeys"
 )
 
 const (
@@ -47,6 +48,13 @@ type Key struct {
 	// we only store privkey as pubkey/address can be derived from it
 	// privkey in this struct is always in plaintext
 	PrivateKey *ecdsa.PrivateKey
+	// if whisper is enabled here, the address will be used as a whisper
+	// identity upon creation of the account or unlocking of the account
+	WhisperEnabled bool
+	// extended key is the root node for new hardened children i.e. sub-accounts
+	ExtendedKey *extkeys.ExtendedKey
+	// next index to be used for sub-account child derivation
+	SubAccountIndex uint32
 }
 
 type keyStore interface {
@@ -66,10 +74,13 @@ type plainKeyJSON struct {
 }
 
 type encryptedKeyJSONV3 struct {
-	Address string     `json:"address"`
-	Crypto  cryptoJSON `json:"crypto"`
-	Id      string     `json:"id"`
-	Version int        `json:"version"`
+	Address         string     `json:"address"`
+	Crypto          cryptoJSON `json:"crypto"`
+	Id              string     `json:"id"`
+	Version         int        `json:"version"`
+	WhisperEnabled  bool       `json:"whisperenabled"`
+	ExtendedKey     cryptoJSON `json:"extendedkey"`
+	SubAccountIndex uint32     `json:"subaccountindex"`
 }
 
 type encryptedKeyJSONV1 struct {
@@ -147,6 +158,41 @@ func newKeyFromECDSA(privateKeyECDSA *ecdsa.PrivateKey) *Key {
 	return key
 }
 
+func newKeyFromExtendedKey(extKey *extkeys.ExtendedKey) (*Key, error) {
+	var (
+		extChild1, extChild2 *extkeys.ExtendedKey
+		err                  error
+	)
+
+	if extKey.Depth == 0 { // we are dealing with master key
+		// CKD#1 - main account
+		extChild1, err = extKey.BIP44Child(extkeys.CoinTypeETH, 0)
+		if err != nil {
+			return &Key{}, err
+		}
+
+		// CKD#2 - sub-accounts root
+		extChild2, err = extKey.BIP44Child(extkeys.CoinTypeETH, 1)
+		if err != nil {
+			return &Key{}, err
+		}
+	} else { // we are dealing with non-master key, so it is safe to persist and extend from it
+		extChild1 = extKey
+		extChild2 = extKey
+	}
+
+	privateKeyECDSA := extChild1.ToECDSA()
+	id := uuid.NewRandom()
+	key := &Key{
+		Id:             id,
+		Address:        crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
+		PrivateKey:     privateKeyECDSA,
+		WhisperEnabled: true,
+		ExtendedKey:    extChild2,
+	}
+	return key, nil
+}
+
 // NewKeyForDirectICAP generates a key whose address fits into < 155 bits so it can fit
 // into the Direct ICAP spec. for simplicity and easier compatibility with other libs, we
 // retry until the first byte is 0.
@@ -176,11 +222,12 @@ func newKey(rand io.Reader) (*Key, error) {
 	return newKeyFromECDSA(privateKeyECDSA), nil
 }
 
-func storeNewKey(ks keyStore, rand io.Reader, auth string) (*Key, accounts.Account, error) {
+func storeNewKey(ks keyStore, rand io.Reader, auth string, w bool) (*Key, accounts.Account, error) {
 	key, err := newKey(rand)
 	if err != nil {
 		return nil, accounts.Account{}, err
 	}
+	key.WhisperEnabled = w
 	a := accounts.Account{Address: key.Address, URL: accounts.URL{Scheme: KeyStoreScheme, Path: ks.JoinPath(keyFileName(key.Address))}}
 	if err := ks.StoreKey(a.URL.Path, key, auth); err != nil {
 		zeroKey(key.PrivateKey)

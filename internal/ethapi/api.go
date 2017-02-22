@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/les/status"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -178,21 +179,34 @@ func (s *PublicTxPoolAPI) Inspect() map[string]map[string]map[string]string {
 // It offers only methods that can retrieve accounts.
 type PublicAccountAPI struct {
 	am *accounts.Manager
+	b  Backend
 }
 
 // NewPublicAccountAPI creates a new PublicAccountAPI.
-func NewPublicAccountAPI(am *accounts.Manager) *PublicAccountAPI {
-	return &PublicAccountAPI{am: am}
+func NewPublicAccountAPI(b Backend) *PublicAccountAPI {
+	return &PublicAccountAPI{
+		am: b.AccountManager(),
+		b:  b,
+	}
 }
 
 // Accounts returns the collection of accounts this node manages
 func (s *PublicAccountAPI) Accounts() []common.Address {
 	var addresses []common.Address
-	for _, wallet := range s.am.Wallets() {
-		for _, account := range wallet.Accounts() {
+
+	backend := s.b.GetStatusBackend()
+	if backend != nil {
+		for _, account := range backend.am.Accounts() {
 			addresses = append(addresses, account.Address)
 		}
+	} else {
+		for _, wallet := range s.am.Wallets() {
+			for _, account := range wallet.Accounts() {
+				addresses = append(addresses, account.Address)
+			}
+		}
 	}
+
 	return addresses
 }
 
@@ -215,9 +229,18 @@ func NewPrivateAccountAPI(b Backend) *PrivateAccountAPI {
 // ListAccounts will return a list of addresses for accounts this node manages.
 func (s *PrivateAccountAPI) ListAccounts() []common.Address {
 	var addresses []common.Address
-	for _, wallet := range s.am.Wallets() {
-		for _, account := range wallet.Accounts() {
-			addresses = append(addresses, account.Address)
+	backend := s.b.GetStatusBackend()
+	if backend != nil {
+		accounts := backend.am.Accounts()
+		addresses := make([]common.Address, len(accounts))
+		for i, acc := range accounts {
+			addresses[i] = acc.Address
+		}
+	} else {
+		for _, wallet := range s.am.Wallets() {
+			for _, account := range wallet.Accounts() {
+				addresses = append(addresses, account.Address)
+			}
 		}
 	}
 	return addresses
@@ -262,8 +285,8 @@ func (s *PrivateAccountAPI) DeriveAccount(url string, path string, pin *bool) (a
 }
 
 // NewAccount will create a new account and returns the address for the new account.
-func (s *PrivateAccountAPI) NewAccount(password string) (common.Address, error) {
-	acc, err := fetchKeystore(s.am).NewAccount(password)
+func (s *PrivateAccountAPI) NewAccount(password string, w bool) (common.Address, error) {
+	acc, err := fetchKeystore(s.am).NewAccount(password, w)
 	if err == nil {
 		return acc.Address, nil
 	}
@@ -868,7 +891,9 @@ type PublicTransactionPoolAPI struct {
 
 // NewPublicTransactionPoolAPI creates a new RPC service with methods specific for the transaction pool.
 func NewPublicTransactionPoolAPI(b Backend) *PublicTransactionPoolAPI {
-	return &PublicTransactionPoolAPI{b}
+	return &PublicTransactionPoolAPI{
+		b: b,
+	}
 }
 
 func getTransaction(chainDb ethdb.Database, b Backend, txHash common.Hash) (*types.Transaction, bool, error) {
@@ -1145,9 +1170,19 @@ func submitTransaction(ctx context.Context, b Backend, tx *types.Transaction) (c
 	return tx.Hash(), nil
 }
 
-// SendTransaction creates a transaction for the given argument, sign it and submit it to the
-// transaction pool.
+// SendTransaction queues transactions, to be fulfilled by CompleteQueuedTransaction()
 func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args SendTxArgs) (common.Hash, error) {
+	backend := s.b.GetStatusBackend()
+	if backend != nil {
+		return backend.SendTransaction(ctx, status.SendTxArgs(args))
+	}
+
+	return common.Hash{}, ErrStatusBackendNotInited
+}
+
+// CompleteQueuedTransaction creates a transaction by unpacking queued transaction, signs it and submits to the
+// transaction pool.
+func (s *PublicTransactionPoolAPI) CompleteQueuedTransaction(ctx context.Context, args SendTxArgs, passphrase string) (common.Hash, error) {
 	// Set some sanity defaults and terminate on failure
 	if err := args.setDefaults(ctx, s.b); err != nil {
 		return common.Hash{}, err
@@ -1159,14 +1194,34 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Sen
 	if err != nil {
 		return common.Hash{}, err
 	}
-	// Assemble the transaction and sign with the wallet
-	tx := args.toTransaction()
+	// make sure that only account which created the tx can complete it
+	selectedAccountAddress := "0x0"
+	if address, ok := ctx.Value(status.SelectedAccountKey).(string); ok {
+		selectedAccountAddress = address
+	}
+	if args.From.Hex() != selectedAccountAddress {
+		glog.V(logger.Info).Infof("Failed to complete tx by %s (when logged in as %s)", args.From.Hex(), selectedAccountAddress)
+		return common.Hash{}, status.ErrInvalidCompleteTxSender
+	}
+
+	nonce, err := s.b.GetPoolNonce(ctx, args.From)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	args.Nonce = (*hexutil.Uint64)(&nonce)
+
+	var tx *types.Transaction
+	if args.To == nil {
+		tx = types.NewContractCreation(uint64(*args.Nonce), (*big.Int)(args.Value), (*big.Int)(args.Gas), (*big.Int)(args.GasPrice), args.Data)
+	} else {
+		tx = types.NewTransaction(uint64(*args.Nonce), *args.To, (*big.Int)(args.Value), (*big.Int)(args.Gas), (*big.Int)(args.GasPrice), args.Data)
+	}
 
 	var chainID *big.Int
 	if config := s.b.ChainConfig(); config.IsEIP155(s.b.CurrentBlock().Number()) {
 		chainID = config.ChainId
 	}
-	signed, err := wallet.SignTx(account, tx, chainID)
+	signed, err := wallet.SignTxWithPassphrase(account, passphrase, tx, chainID)
 	if err != nil {
 		return common.Hash{}, err
 	}
