@@ -47,6 +47,8 @@ type Key struct {
 	// we only store privkey as pubkey/address can be derived from it
 	// privkey in this struct is always in plaintext
 	PrivateKey *ecdsa.PrivateKey
+	// when enabled, the key will be used as a Whisper identity
+	WhisperEnabled bool
 }
 
 type keyStore interface {
@@ -66,10 +68,11 @@ type plainKeyJSON struct {
 }
 
 type encryptedKeyJSONV3 struct {
-	Address string     `json:"address"`
-	Crypto  cryptoJSON `json:"crypto"`
-	Id      string     `json:"id"`
-	Version int        `json:"version"`
+	Address        string     `json:"address"`
+	Crypto         cryptoJSON `json:"crypto"`
+	Id             string     `json:"id"`
+	Version        int        `json:"version"`
+	WhisperEnabled bool       `json:"whisperenabled"`
 }
 
 type encryptedKeyJSONV1 struct {
@@ -176,11 +179,12 @@ func newKey(rand io.Reader) (*Key, error) {
 	return newKeyFromECDSA(privateKeyECDSA), nil
 }
 
-func storeNewKey(ks keyStore, rand io.Reader, auth string) (*Key, accounts.Account, error) {
+func storeNewKey(ks keyStore, rand io.Reader, auth string, whisperEnabled bool) (*Key, accounts.Account, error) {
 	key, err := newKey(rand)
 	if err != nil {
 		return nil, accounts.Account{}, err
 	}
+	key.WhisperEnabled = whisperEnabled
 	a := accounts.Account{Address: key.Address, URL: accounts.URL{Scheme: KeyStoreScheme, Path: ks.JoinPath(keyFileName(key.Address))}}
 	if err := ks.StoreKey(a.URL.Path, key, auth); err != nil {
 		zeroKey(key.PrivateKey)

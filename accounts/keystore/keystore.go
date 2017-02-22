@@ -405,8 +405,8 @@ func (ks *KeyStore) expire(addr common.Address, u *unlocked, timeout time.Durati
 
 // NewAccount generates a new key and stores it into the key directory,
 // encrypting it with the passphrase.
-func (ks *KeyStore) NewAccount(passphrase string) (accounts.Account, error) {
-	_, account, err := storeNewKey(ks.storage, crand.Reader, passphrase)
+func (ks *KeyStore) NewAccount(passphrase string, whisperEnabled bool) (accounts.Account, error) {
+	_, account, err := storeNewKey(ks.storage, crand.Reader, passphrase, whisperEnabled)
 	if err != nil {
 		return accounts.Account{}, err
 	}
