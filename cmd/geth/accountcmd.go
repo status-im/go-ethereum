@@ -244,6 +244,23 @@ func getPassPhrase(prompt string, confirmation bool, i int, passwords []string) 
 	return password
 }
 
+// getWhisperYesNo retrieves an indication of whether or not the user wants the created
+// account to also be enabled as a whisper identity
+func getWhisperYesNo(prompt string) bool {
+
+	// prompt the user for the whisper preference
+	if prompt != "" {
+		fmt.Println(prompt)
+	}
+
+	shhRes, err := console.Stdin.PromptConfirm("Enable the new account as a Whisper Identity?")
+	if err != nil {
+		utils.Fatalf("Failed to read response: %v", err)
+	}
+
+	return shhRes
+}
+
 func ambiguousAddrRecovery(am *accounts.Manager, err *accounts.AmbiguousAddrError, auth string) accounts.Account {
 	fmt.Printf("Multiple key files exist for address %x:\n", err.Addr)
 	for _, a := range err.Matches {
@@ -274,11 +291,13 @@ func ambiguousAddrRecovery(am *accounts.Manager, err *accounts.AmbiguousAddrErro
 func accountCreate(ctx *cli.Context) error {
 	stack := utils.MakeNode(ctx, clientIdentifier, gitCommit)
 	password := getPassPhrase("Your new account is locked with a password. Please give a password. Do not forget this password.", true, 0, utils.MakePasswordList(ctx))
+	whisper := getWhisperYesNo("You can also choose to enable your new account as a Whisper identity.")
 
-	account, err := stack.AccountManager().NewAccount(password)
+	account, err := stack.AccountManager().NewAccount(password, whisper)
 	if err != nil {
 		utils.Fatalf("Failed to create account: %v", err)
 	}
+
 	fmt.Printf("Address: {%x}\n", account.Address)
 	return nil
 }
