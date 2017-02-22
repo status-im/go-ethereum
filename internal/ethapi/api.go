@@ -267,8 +267,8 @@ func (s *PrivateAccountAPI) DeriveAccount(url string, path string, pin *bool) (a
 }
 
 // NewAccount will create a new account and returns the address for the new account.
-func (s *PrivateAccountAPI) NewAccount(password string) (common.Address, error) {
-	acc, err := fetchKeystore(s.am).NewAccount(password)
+func (s *PrivateAccountAPI) NewAccount(password string, whisperEnabled bool) (common.Address, error) {
+	acc, err := fetchKeystore(s.am).NewAccount(password, whisperEnabled)
 	if err == nil {
 		return acc.Address, nil
 	}
