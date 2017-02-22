@@ -37,7 +37,7 @@ func TestKeyStore(t *testing.T) {
 	dir, ks := tmpKeyStore(t, true)
 	defer os.RemoveAll(dir)
 
-	a, err := ks.NewAccount("foo")
+	a, err := ks.NewAccount("foo", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestSign(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	pass := "" // not used but required by API
-	a1, err := ks.NewAccount(pass)
+	a1, err := ks.NewAccount(pass, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestSignWithPassphrase(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	pass := "passwd"
-	acc, err := ks.NewAccount(pass)
+	acc, err := ks.NewAccount(pass, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestTimedUnlock(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	pass := "foo"
-	a1, err := ks.NewAccount(pass)
+	a1, err := ks.NewAccount(pass, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestOverrideUnlock(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	pass := "foo"
-	a1, err := ks.NewAccount(pass)
+	a1, err := ks.NewAccount(pass, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestSignRace(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Create a test account.
-	a1, err := ks.NewAccount("")
+	a1, err := ks.NewAccount("", false)
 	if err != nil {
 		t.Fatal("could not create the test account", err)
 	}
@@ -290,7 +290,7 @@ func TestWalletNotifications(t *testing.T) {
 		// Execute a creation or deletion and ensure event arrival
 		if create := len(live) == 0 || rand.Int()%4 > 0; create {
 			// Add a new account and ensure wallet notifications arrives
-			account, err := ks.NewAccount("")
+			account, err := ks.NewAccount("", false)
 			if err != nil {
 				t.Fatalf("failed to create test account: %v", err)
 			}
