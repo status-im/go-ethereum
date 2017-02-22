@@ -35,7 +35,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/filters"
-	"github.com/ethereum/go-ethereum/eth/gasprice"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
@@ -170,12 +169,11 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 	eth.miner.SetGasPrice(config.GasPrice)
 	eth.miner.SetExtra(makeExtraData(config.ExtraData))
 
-	eth.ApiBackend = &EthApiBackend{eth, nil}
+	eth.ApiBackend = &EthApiBackend{eth, nil, nil}
 	gpoParams := config.GPO
 	if gpoParams.Default == nil {
 		gpoParams.Default = config.GasPrice
 	}
-	eth.ApiBackend.gpo = gasprice.NewOracle(eth.ApiBackend, gpoParams)
 
 	return eth, nil
 }
