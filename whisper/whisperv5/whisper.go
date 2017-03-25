@@ -213,9 +213,9 @@ func (w *Whisper) NewKeyPair() (string, error) {
 		return "", fmt.Errorf("failed to generate valid key")
 	}
 
-	id, err := GenerateRandomID()
+	id, err := toDeterministicID(common.ToHex(crypto.FromECDSAPub(&key.PublicKey)), keyIdSize)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate ID: %s", err)
+		return "", err
 	}
 
 	w.keyMu.Lock()
@@ -228,13 +228,66 @@ func (w *Whisper) NewKeyPair() (string, error) {
 	return id, nil
 }
 
-// DeleteKeyPair deletes the specified key if it exists.
-func (w *Whisper) DeleteKeyPair(key string) bool {
+// AddIdentity adds cryptographic identity into the known
+// identities list (for message decryption).
+func (w *Whisper) AddKeyPair(key *ecdsa.PrivateKey) (string, error) {
+	id, err := makeDeterministicID(common.ToHex(crypto.FromECDSAPub(&key.PublicKey)), keyIdSize)
+	if err != nil {
+		return "", err
+	}
+	if w.HasKeyPair(id) {
+		return id, nil // no need to re-inject
+	}
+
 	w.keyMu.Lock()
 	defer w.keyMu.Unlock()
 
-	if w.privateKeys[key] != nil {
-		delete(w.privateKeys, key)
+	w.privateKeys[id] = key
+	log.Info("Whisper identity added", "id", id, "pubkey", common.ToHex(crypto.FromECDSAPub(&key.PublicKey)))
+
+	return id, nil
+}
+
+// SelectKeyPair adds cryptographic identity, and makes sure
+// that it is the only private key known to the node.
+func (w *Whisper) SelectKeyPair(key *ecdsa.PrivateKey) error {
+	id, err := makeDeterministicID(common.ToHex(crypto.FromECDSAPub(&key.PublicKey)), keyIdSize)
+	if err != nil {
+		return err
+	}
+
+	w.keyMu.Lock()
+	defer w.keyMu.Unlock()
+
+	w.privateKeys = make(map[string]*ecdsa.PrivateKey) // reset key store
+	w.privateKeys[id] = key
+
+	log.Info("Whisper identity selected", "id", id, "key", common.ToHex(crypto.FromECDSAPub(&key.PublicKey)))
+	return nil
+}
+
+// DeleteKeyPairs removes all cryptographic identities known to the node
+func (w *Whisper) DeleteKeyPairs() error {
+	w.keyMu.Lock()
+	defer w.keyMu.Unlock()
+
+	w.privateKeys = make(map[string]*ecdsa.PrivateKey)
+
+	return nil
+}
+
+// DeleteKeyPair deletes the specified key if it exists.
+func (w *Whisper) DeleteKeyPair(id string) bool {
+	deterministicID, err := toDeterministicID(id, keyIdSize)
+	if err != nil {
+		return false
+	}
+
+	w.keyMu.Lock()
+	defer w.keyMu.Unlock()
+
+	if w.privateKeys[deterministicID] != nil {
+		delete(w.privateKeys, deterministicID)
 		return true
 	}
 	return false
@@ -243,16 +296,26 @@ func (w *Whisper) DeleteKeyPair(key string) bool {
 // HasKeyPair checks if the the whisper node is configured with the private key
 // of the specified public pair.
 func (w *Whisper) HasKeyPair(id string) bool {
+	deterministicID, err := toDeterministicID(id, keyIdSize)
+	if err != nil {
+		return false
+	}
+
 	w.keyMu.RLock()
 	defer w.keyMu.RUnlock()
-	return w.privateKeys[id] != nil
+	return w.privateKeys[deterministicID] != nil
 }
 
 // GetPrivateKey retrieves the private key of the specified identity.
 func (w *Whisper) GetPrivateKey(id string) (*ecdsa.PrivateKey, error) {
+	deterministicID, err := toDeterministicID(id, keyIdSize)
+	if err != nil {
+		return nil, err
+	}
+
 	w.keyMu.RLock()
 	defer w.keyMu.RUnlock()
-	key := w.privateKeys[id]
+	key := w.privateKeys[deterministicID]
 	if key == nil {
 		return nil, fmt.Errorf("invalid id")
 	}
@@ -283,6 +346,23 @@ func (w *Whisper) GenerateSymKey() (string, error) {
 	}
 	w.symKeys[id] = key
 	return id, nil
+}
+
+// AddSymKey stores the key with a given id.
+func (w *Whisper) AddSymKey(id string, key []byte) (string, error) {
+	deterministicID, err := toDeterministicID(id, keyIdSize)
+	if err != nil {
+		return "", err
+	}
+
+	w.keyMu.Lock()
+	defer w.keyMu.Unlock()
+
+	if w.symKeys[deterministicID] != nil {
+		return "", fmt.Errorf("key already exists: %v", id)
+	}
+	w.symKeys[deterministicID] = key
+	return deterministicID, nil
 }
 
 // AddSymKeyDirect stores the key, and returns its id.
@@ -396,7 +476,7 @@ func (w *Whisper) Send(envelope *Envelope) error {
 
 // Start implements node.Service, starting the background data propagation thread
 // of the Whisper protocol.
-func (w *Whisper) Start(*p2p.Server) error {
+func (w *Whisper) Start(stack *p2p.Server) error {
 	log.Info("started whisper v." + ProtocolVersionStr)
 	go w.update()
 
@@ -738,7 +818,7 @@ func (s *Statistics) reset() {
 func ValidateKeyID(id string) error {
 	const target = keyIdSize * 2
 	if len(id) != target {
-		return fmt.Errorf("wrong size of key ID (expected %d bytes, got %d)", target, len(id))
+		return fmt.Errorf("wrong size of key ID (expected %d bytes, got %d): %s", target, len(id), id)
 	}
 	return nil
 }
@@ -815,4 +895,31 @@ func GenerateRandomID() (id string, err error) {
 	}
 	id = common.Bytes2Hex(buf)
 	return id, err
+}
+
+// makeDeterministicID generates a deterministic ID, based on a given input
+func makeDeterministicID(input string, keyLen int) (id string, err error) {
+	buf := pbkdf2.Key([]byte(input), nil, 4096, keyLen, sha256.New)
+	if !validateSymmetricKey(buf) {
+		return "", fmt.Errorf("error in GenerateDeterministicID: failed to generate key")
+	}
+	id = common.Bytes2Hex(buf)
+	return id, err
+}
+
+// toDeterministicID reviews incoming id, and transforms it to format
+// expected internally be private key store. Originally, public keys
+// were used as keys, now random keys are being used. And in order to
+// make it easier to consume, we now allow both random IDs and public
+// keys to be passed.
+func toDeterministicID(id string, expectedLen int) (string, error) {
+	if len(id) != (expectedLen * 2) { // we received hex key, so number of chars in id is doubled
+		var err error
+		id, err = makeDeterministicID(id, expectedLen)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return id, nil
 }

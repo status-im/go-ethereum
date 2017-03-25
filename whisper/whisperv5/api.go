@@ -206,6 +206,11 @@ func (api *PublicWhisperAPI) DeleteSymmetricKey(name string) (bool, error) {
 	return res, nil
 }
 
+// NewFilter is alias to Subscribe
+func (api *PublicWhisperAPI) NewFilter(args WhisperFilterArgs) (string, error) {
+	return api.Subscribe(args)
+}
+
 // Subscribe creates and registers a new filter to watch for inbound whisper messages.
 // Returns the ID of the newly created filter.
 func (api *PublicWhisperAPI) Subscribe(args WhisperFilterArgs) (string, error) {
@@ -225,6 +230,11 @@ func (api *PublicWhisperAPI) Subscribe(args WhisperFilterArgs) (string, error) {
 			return "", errors.New(fmt.Sprintf("subscribe: topic %d has wrong size: %d", i, len(bt)))
 		}
 		filter.Topics = append(filter.Topics, bt)
+	}
+
+	args.Key, err = toDeterministicID(args.Key, keyIdSize)
+	if err != nil {
+		return "", err
 	}
 
 	if err = ValidateKeyID(args.Key); err != nil {
@@ -273,7 +283,12 @@ func (api *PublicWhisperAPI) Unsubscribe(id string) {
 	api.whisper.Unsubscribe(id)
 }
 
-// GetSubscriptionMessages retrieves all the new messages matched by the corresponding
+// GetFilterChanges is alias for GetNewSubscriptionMessages
+func (api *PublicWhisperAPI) GetFilterChanges(filterId string) []*WhisperMessage {
+	return api.GetNewSubscriptionMessages(filterId)
+}
+
+// GetNewSubscriptionMessages retrieves all the new messages matched by the corresponding
 // subscription filter since the last retrieval.
 func (api *PublicWhisperAPI) GetNewSubscriptionMessages(id string) []*WhisperMessage {
 	f := api.whisper.GetFilter(id)
@@ -401,6 +416,53 @@ type PostArgs struct {
 	TargetPeer string        `json:"targetPeer"` // peer id (for p2p message only)
 }
 
+func (args *PostArgs) UnmarshalJSON(data []byte) (err error) {
+	var obj struct {
+		Type       string         `json:"type"`
+		TTL        hexutil.Uint64 `json:"ttl"`
+		Sig        string         `json:"sig"`
+		Key        string         `json:"key"`
+		Topic      string         `json:"topic"`
+		Payload    string         `json:"payload"`
+		PowTime    hexutil.Uint64 `json:"powTime"`
+		PowTarget  float64        `json:"powTarget,string"`
+		TargetPeer string         `json:"targetPeer"`
+	}
+
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+
+	if obj.Type != "sym" && obj.Type != "asym" {
+		return errors.New("wrong type (sym/asym)")
+	}
+
+	args.Type = obj.Type
+	args.Key = obj.Key
+	args.TTL = uint32(obj.TTL)
+	args.Sig = obj.Sig
+	args.Payload = []byte(obj.Payload)
+	args.PowTime = uint32(obj.PowTime)
+	if args.PowTime < DefaultMinimumPoWTime { // ensure minimum PoW
+		args.PowTime = DefaultMinimumPoWTime
+	}
+	args.PowTarget = obj.PowTarget
+	if args.PowTarget < DefaultMinimumPoW { // ensure minimum PoW
+		args.PowTarget = DefaultMinimumPoW
+	}
+	args.TargetPeer = obj.TargetPeer
+
+	// process topic
+	x := common.FromHex(obj.Topic)
+	if x == nil {
+		return fmt.Errorf("topic is invalid: %v", obj.Topic)
+	}
+	topicBytes := BytesToTopic(x)
+	args.Topic = []byte(topicBytes[:])
+
+	return nil
+}
+
 type WhisperFilterArgs struct {
 	Symmetric bool     // encryption type
 	Key       string   // id of the key to be used for decryption
@@ -438,6 +500,9 @@ func (args *WhisperFilterArgs) UnmarshalJSON(b []byte) (err error) {
 	args.Key = obj.Key
 	args.Sig = obj.Sig
 	args.MinPoW = obj.MinPoW
+	if args.MinPoW < DefaultMinimumPoW { // ensure minimum PoW
+		args.MinPoW = DefaultMinimumPoW
+	}
 	args.AllowP2P = obj.AllowP2P
 
 	// Construct the topic array
@@ -456,7 +521,7 @@ func (args *WhisperFilterArgs) UnmarshalJSON(b []byte) (err error) {
 		topicsDecoded := make([][]byte, len(topics))
 		for j, s := range topics {
 			x := common.FromHex(s)
-			if x == nil || len(x) > TopicLength {
+			if x == nil {
 				return fmt.Errorf("topic[%d] is invalid", j)
 			}
 			topicsDecoded[j] = x
