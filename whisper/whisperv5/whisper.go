@@ -259,6 +259,38 @@ func (w *Whisper) GetPrivateKey(id string) (*ecdsa.PrivateKey, error) {
 	return key, nil
 }
 
+// AddIdentity adds identity into the known identities list (for message decryption).
+func (w *Whisper) AddIdentity(key *ecdsa.PrivateKey) {
+	w.keyMu.Lock()
+	defer w.keyMu.Unlock()
+	w.privateKeys[common.ToHex(crypto.FromECDSAPub(&key.PublicKey))] = key
+}
+
+// InjectIdentity injects a manually added identity/key pair into the whisper keys
+func (w *Whisper) InjectIdentity(key *ecdsa.PrivateKey) error {
+	if w.HasKeyPair(common.ToHex(crypto.FromECDSAPub(&key.PublicKey))) { // no need to re-inject
+		return nil
+	}
+	w.keyMu.Lock()
+	defer w.keyMu.Unlock()
+
+	w.privateKeys = make(map[string]*ecdsa.PrivateKey) // reset key store
+	w.privateKeys[common.ToHex(crypto.FromECDSAPub(&key.PublicKey))] = key
+
+	log.Info(fmt.Sprintf("Injected identity into whisper: %s\n", common.ToHex(crypto.FromECDSAPub(&key.PublicKey))))
+	return nil
+}
+
+// ClearIdentities clears the current whisper identities in memory
+func (w *Whisper) ClearIdentities() error {
+	w.keyMu.Lock()
+	defer w.keyMu.Unlock()
+
+	w.privateKeys = make(map[string]*ecdsa.PrivateKey)
+
+	return nil
+}
+
 // GenerateSymKey generates a random symmetric key and stores it under id,
 // which is then returned. Will be used in the future for session key exchange.
 func (w *Whisper) GenerateSymKey() (string, error) {
