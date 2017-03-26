@@ -88,12 +88,14 @@ var (
 	argPoW       = flag.Float64("pow", whisper.MinimumPoW, "PoW for normal messages in float format (e.g. 2.7)")
 	argServerPoW = flag.Float64("mspow", whisper.MinimumPoW, "PoW requirement for Mail Server request")
 
-	argIP     = flag.String("ip", "", "IP address and port of this node (e.g. 127.0.0.1:30303)")
-	argPub    = flag.String("pub", "", "public key for asymmetric encryption")
-	argDBPath = flag.String("dbpath", "", "path to the server's DB directory")
-	argIDFile = flag.String("idfile", "", "file name with node id (private key)")
-	argEnode  = flag.String("boot", "", "bootstrap node you want to connect to (e.g. enode://e454......08d50@52.176.211.200:16428)")
-	argTopic  = flag.String("topic", "", "topic in hexadecimal format (e.g. 70a4beef)")
+	argIP      = flag.String("ip", "", "IP address and port of this node (e.g. 127.0.0.1:30303)")
+	argPub     = flag.String("pub", "", "public key for asymmetric encryption")
+	argDBPath  = flag.String("dbpath", "", "path to the server's DB directory")
+	argIDFile  = flag.String("idfile", "", "file name with node id (private key)")
+	argEnode   = flag.String("boot", "", "bootstrap node you want to connect to (e.g. enode://e454......08d50@52.176.211.200:16428)")
+	argTopic   = flag.String("topic", "", "topic in hexadecimal format (e.g. 70a4beef)")
+	argSymPass = flag.String("sympass", "", "SymKey password")
+	argMsPass  = flag.String("mspass", "", "Mailserver password")
 )
 
 func main() {
@@ -133,6 +135,14 @@ func processArgs() {
 		if !isKeyValid(pub) {
 			utils.Fatalf("invalid public key")
 		}
+	}
+
+	if len(*argSymPass) > 0 {
+		symPass = *argSymPass
+	}
+
+	if len(*argMsPass) > 0 {
+		msPassword = *argMsPass
 	}
 
 	if *echoMode {
@@ -354,8 +364,22 @@ func run() {
 	if *requestMail {
 		requestExpiredMessagesLoop()
 	} else {
-		sendLoop()
+		pingLoop() // instead of sendLoop()
 	}
+}
+
+func pingLoop() {
+	ticker := time.NewTicker(time.Second * 120)
+
+	for {
+		select {
+		case <-ticker.C:
+			fmt.Println("I am alive: ", time.Now())
+		case <-done:
+			return
+		}
+	}
+
 }
 
 func sendLoop() {
