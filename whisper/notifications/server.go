@@ -37,7 +37,7 @@ type NotificationServer struct {
 
 	nodeID      string            // proposed server will feature this ID
 	discovery   *discoveryService // discovery service handles client/server negotiation, when server is selected
-	protocolKey []byte            // symmetric publicly known key, to encode handshake communication
+	protocolKey *ecdsa.PrivateKey // private key of service, used to encode handshake communication
 
 	clientSessions   map[string]*ClientSession
 	clientSessionsMu sync.RWMutex
@@ -108,8 +108,13 @@ func (s *NotificationServer) Start(stack *p2p.Server) error {
 	}
 
 	// configure keys
-	s.whisper.AddSymKey(protocolKeyName, []byte(s.config.NotificationServerPassword))
-	s.protocolKey = s.whisper.GetSymKey(protocolKeyName)
+	identity, err := s.config.ReadIdentityFile()
+	if err != nil {
+		return err
+	}
+	s.whisper.AddIdentity(identity)
+	s.protocolKey = identity
+	glog.V(logger.Info).Infoln("protocol pubkey: ", common.ToHex(crypto.FromECDSAPub(&s.protocolKey.PublicKey)))
 
 	// start discovery protocol
 	s.discovery.Start()
@@ -353,8 +358,6 @@ func (s *NotificationServer) processSendNotificationRequest(msg *whisper.Receive
 	s.deviceSubscriptionsMu.RLock()
 	defer s.deviceSubscriptionsMu.RUnlock()
 
-	glog.Infoln("MESSAGE NORTIFIATION REQUEST: ", msg.SymKeyHash)
-
 	for _, subscriber := range s.deviceSubscriptions {
 		if subscriber.ChatSessionKeyHash == msg.SymKeyHash {
 			if whisper.IsPubKeyEqual(msg.Src, subscriber.PubKey) {
@@ -373,7 +376,7 @@ func (s *NotificationServer) processSendNotificationRequest(msg *whisper.Receive
 	return nil
 }
 
-// installFilter installs Whisper filter
+// installTopicFilter installs Whisper filter using symmetric key
 func (s *NotificationServer) installTopicFilter(topicName string, topicKey []byte) (filterID string, err error) {
 	topic := MakeTopic([]byte(topicName))
 	filter := whisper.Filter{
@@ -386,7 +389,24 @@ func (s *NotificationServer) installTopicFilter(topicName string, topicKey []byt
 		return "", fmt.Errorf("failed installing filter: %v", err)
 	}
 
-	glog.V(logger.Debug).Infof("installed filter %v for topic %x (%s)", filterID, topic, topicName)
+	glog.V(logger.Debug).Infof("installed topic filter %v for topic %x (%s)", filterID, topic, topicName)
+	return
+}
+
+// installKeyFilter installs Whisper filter using asymmetric key
+func (s *NotificationServer) installKeyFilter(topicName string, key *ecdsa.PrivateKey) (filterID string, err error) {
+	topic := MakeTopic([]byte(topicName))
+	filter := whisper.Filter{
+		KeyAsym:   key,
+		Topics:    []whisper.TopicType{topic},
+		AcceptP2P: true,
+	}
+	filterID, err = s.whisper.Watch(&filter)
+	if err != nil {
+		return "", fmt.Errorf("failed installing filter: %v", err)
+	}
+
+	glog.V(logger.Info).Infof("installed key filter %v for topic %x (%s)", filterID, topic, topicName)
 	return
 }
 

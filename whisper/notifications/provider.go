@@ -1,12 +1,14 @@
 package notifications
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 
-	"bytes"
+	"github.com/ethereum/go-ethereum/logger"
+	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/status-im/status-go/geth/params"
 )
 
@@ -23,9 +25,10 @@ type FirebaseProvider struct {
 
 // NewFirebaseProvider creates new FCM provider
 func NewFirebaseProvider(config *params.FirebaseConfig) *FirebaseProvider {
+	authorizationKey, _ := config.ReadAuthorizationKeyFile()
 	return &FirebaseProvider{
 		NotificationTriggerURL: config.NotificationTriggerURL,
-		AuthorizationKey:       config.AuthorizationKey,
+		AuthorizationKey:       string(authorizationKey),
 	}
 }
 
@@ -49,10 +52,10 @@ func (p *FirebaseProvider) Send(id string, payload string) (err error) {
 	}
 	defer resp.Body.Close()
 
-	fmt.Println("response Status:", resp.Status)
-	fmt.Println("response Headers:", resp.Header)
+	glog.V(logger.Detail).Infoln("FCM response status: ", resp.Status)
+	glog.V(logger.Detail).Infoln("FCM response header: ", resp.Header)
 	body, _ := ioutil.ReadAll(resp.Body)
-	fmt.Println("response Body:", string(body))
+	glog.V(logger.Info).Infoln("FCM response body: ", string(body))
 
 	return nil
 }

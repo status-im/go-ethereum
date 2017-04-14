@@ -1,11 +1,12 @@
 package notifications
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 
-	"encoding/hex"
-	"encoding/json"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
@@ -13,7 +14,6 @@ import (
 )
 
 const (
-	protocolKeyName            = "NOTIFICATION_PROTOCOL_KEY"
 	topicDiscoverServer        = "DISCOVER_NOTIFICATION_SERVER"
 	topicProposeServer         = "PROPOSE_NOTIFICATION_SERVER"
 	topicServerAccepted        = "ACCEPT_NOTIFICATION_SERVER"
@@ -43,14 +43,14 @@ func (s *discoveryService) Start() error {
 	var err error
 
 	// notification server discovery requests
-	s.discoverFilterID, err = s.server.installTopicFilter(topicDiscoverServer, s.server.protocolKey)
+	s.discoverFilterID, err = s.server.installKeyFilter(topicDiscoverServer, s.server.protocolKey)
 	if err != nil {
 		return fmt.Errorf("failed installing filter: %v", err)
 	}
 	go s.server.requestProcessorLoop(s.discoverFilterID, topicDiscoverServer, s.processDiscoveryRequest)
 
 	// notification server accept/select requests
-	s.serverAcceptedFilterID, err = s.server.installTopicFilter(topicServerAccepted, s.server.protocolKey)
+	s.serverAcceptedFilterID, err = s.server.installKeyFilter(topicServerAccepted, s.server.protocolKey)
 	if err != nil {
 		return fmt.Errorf("failed installing filter: %v", err)
 	}
@@ -74,8 +74,8 @@ func (s *discoveryService) Stop() error {
 func (s *discoveryService) processDiscoveryRequest(msg *whisper.ReceivedMessage) error {
 	// offer this node as notification server
 	msgParams := whisper.MessageParams{
+		Src:      s.server.protocolKey,
 		Dst:      msg.Src,
-		KeySym:   s.server.protocolKey,
 		Topic:    MakeTopic([]byte(topicProposeServer)),
 		Payload:  []byte(`{"server": "0x` + s.server.nodeID + `"}`),
 		TTL:      uint32(s.server.config.TTL),
@@ -92,7 +92,8 @@ func (s *discoveryService) processDiscoveryRequest(msg *whisper.ReceivedMessage)
 		return fmt.Errorf("failed to send server proposal message: %v", err)
 	}
 
-	glog.V(logger.Debug).Infof("server proposal message sent (dst: %v, topic: %x)", msgParams.Dst, msgParams.Topic)
+	glog.V(logger.Info).Infof("server proposal sent (server: %v, dst: %v, topic: %x)",
+		s.server.nodeID, common.ToHex(crypto.FromECDSAPub(msgParams.Dst)), msgParams.Topic)
 	return nil
 }
 
@@ -125,8 +126,8 @@ func (s *discoveryService) processServerAcceptedRequest(msg *whisper.ReceivedMes
 
 	// confirm that client has been successfully subscribed
 	msgParams := whisper.MessageParams{
+		Src:      s.server.protocolKey,
 		Dst:      msg.Src,
-		KeySym:   s.server.protocolKey,
 		Topic:    MakeTopic([]byte(topicAckClientSubscription)),
 		Payload:  []byte(`{"server": "0x` + s.server.nodeID + `", "key": "0x` + hex.EncodeToString(sessionKey) + `"}`),
 		TTL:      uint32(s.server.config.TTL),
