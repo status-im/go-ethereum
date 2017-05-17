@@ -5,7 +5,7 @@ RUN \
 
   # clone status-go
   mkdir -p /usr/lib/go/src/github.com/status-im && \
-  git clone --depth 1 --branch develop https://github.com/status-im/status-go.git /usr/lib/go/src/github.com/status-im/status-go && \
+  git clone --depth 1 --branch 0.9.7 https://github.com/status-im/status-go.git /usr/lib/go/src/github.com/status-im/status-go && \
 
   # clone go-ethereum (and install everything)
   git clone --depth 1 --branch status/1.6.1-stable https://github.com/status-im/go-ethereum && \
