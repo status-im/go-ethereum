@@ -5,10 +5,10 @@ RUN \
 
   # clone status-go
   mkdir -p /usr/lib/go/src/github.com/status-im && \
-  git clone --depth 1 --branch develop https://github.com/status-im/status-go.git /usr/lib/go/src/github.com/status-im/status-go && \
+  git clone --depth 1 --branch geth/1.6.1-stable-for-hackaton https://github.com/status-im/status-go.git /usr/lib/go/src/github.com/status-im/status-go && \
 
   # clone go-ethereum (and install everything)
-  git clone --depth 1 --branch status/1.6.1-stable https://github.com/status-im/go-ethereum && \
+  git clone --depth 1 --branch status/1.6.1-stable-for-hackaton https://github.com/status-im/go-ethereum && \
   (cd go-ethereum && make geth) && \
   cp go-ethereum/build/bin/geth /geth && \
   apk del go git make gcc musl-dev linux-headers && \
