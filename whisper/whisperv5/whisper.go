@@ -336,20 +336,6 @@ func (w *Whisper) DeleteKeyPair(id string) bool {
 	return false
 }
 
-// AddKeyPair imports a asymmetric private key and returns it identifier.
-func (w *Whisper) AddKeyPair(key *ecdsa.PrivateKey) (string, error) {
-	id, err := GenerateRandomID()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate ID: %s", err)
-	}
-
-	w.keyMu.Lock()
-	w.privateKeys[id] = key
-	w.keyMu.Unlock()
-
-	return id, nil
-}
-
 // HasKeyPair checks if the the whisper node is configured with the private key
 // of the specified public pair.
 func (w *Whisper) HasKeyPair(id string) bool {
