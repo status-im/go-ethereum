@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2013-2014 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,11 +9,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/hmac"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"hash"
 	"math/big"
+
+	"github.com/btcsuite/fastsha256"
 )
 
 // Errors returned by canonicalPadding.
@@ -328,7 +329,7 @@ func recoverKeyFromSignature(curve *KoblitzCurve, sig *Signature, msg []byte,
 	e.Mod(e, curve.Params().N)
 	minuseGx, minuseGy := curve.ScalarBaseMult(e.Bytes())
 
-	// TODO: this would be faster if we did a mult and add in one
+	// TODO(oga) this would be faster if we did a mult and add in one
 	// step to prevent the jacobian conversion back and forth.
 	Qx, Qy := curve.Add(sRx, sRy, minuseGx, minuseGy)
 
@@ -454,7 +455,7 @@ func nonceRFC6979(privkey *big.Int, hash []byte) *big.Int {
 	curve := S256()
 	q := curve.Params().N
 	x := privkey
-	alg := sha256.New
+	alg := fastsha256.New
 
 	qlen := q.BitLen()
 	holen := alg().Size()

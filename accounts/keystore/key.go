@@ -170,11 +170,10 @@ func newKeyFromExtendedKey(extKey *extkeys.ExtendedKey) (*Key, error) {
 	privateKeyECDSA := extChild1.ToECDSA()
 	id := uuid.NewRandom()
 	key := &Key{
-		Id:             id,
-		Address:        crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
-		PrivateKey:     privateKeyECDSA,
-		WhisperEnabled: true,
-		ExtendedKey:    extChild2,
+		Id:          id,
+		Address:     crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
+		PrivateKey:  privateKeyECDSA,
+		ExtendedKey: extChild2,
 	}
 	return key, nil
 }

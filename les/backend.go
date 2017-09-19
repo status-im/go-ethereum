@@ -71,6 +71,8 @@ type LightEthereum struct {
 	netRPCService *ethapi.PublicNetAPI
 
 	wg sync.WaitGroup
+
+	StatusBackend *ethapi.StatusBackend
 }
 
 func New(ctx *node.ServiceContext, config *eth.Config) (*LightEthereum, error) {
@@ -117,12 +119,17 @@ func New(ctx *node.ServiceContext, config *eth.Config) (*LightEthereum, error) {
 	if eth.protocolManager, err = NewProtocolManager(eth.chainConfig, true, config.NetworkId, eth.eventMux, eth.engine, eth.peers, eth.blockchain, nil, chainDb, eth.odr, eth.relay, quitSync, &eth.wg); err != nil {
 		return nil, err
 	}
-	eth.ApiBackend = &LesApiBackend{eth, nil}
+	eth.ApiBackend = &LesApiBackend{eth, nil, nil}
 	gpoParams := config.GPO
 	if gpoParams.Default == nil {
 		gpoParams.Default = config.GasPrice
 	}
 	eth.ApiBackend.gpo = gasprice.NewOracle(eth.ApiBackend, gpoParams)
+
+	// inject status-im backend
+	eth.ApiBackend.statusBackend = ethapi.NewStatusBackend(eth.ApiBackend)
+	eth.StatusBackend = eth.ApiBackend.statusBackend // alias
+
 	return eth, nil
 }
 
