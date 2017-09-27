@@ -103,10 +103,6 @@
   version = "1.2.0"
 
 [[constraint]]
-  name = "github.com/status-im/status-go"
-  branch = "develop"
-
-[[constraint]]
   branch = "master"
   name = "github.com/syndtr/goleveldb"
 
