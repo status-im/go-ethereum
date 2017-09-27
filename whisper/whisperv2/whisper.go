@@ -136,9 +136,7 @@ func (self *Whisper) NewIdentity() *ecdsa.PrivateKey {
 
 // AddIdentity adds identity into the known identities list (for message decryption).
 func (self *Whisper) AddIdentity(key *ecdsa.PrivateKey) {
-	self.keysMu.Lock()
 	self.keys[string(crypto.FromECDSAPub(&key.PublicKey))] = key
-	self.keysMu.Unlock()
 }
 
 // HasIdentity checks if the the whisper node is configured with the private key
