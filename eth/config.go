@@ -43,6 +43,7 @@ var DefaultConfig = Config{
 		DatasetsInMem:  1,
 		DatasetsOnDisk: 2,
 	},
+	ULC: &ULCConfig{MinTrustedFraction: 75},
 	NetworkId:     1,
 	LightPeers:    100,
 	DatabaseCache: 768,
@@ -86,6 +87,9 @@ type Config struct {
 	// Light client options
 	LightServ  int `toml:",omitempty"` // Maximum percentage of time allowed for serving LES requests
 	LightPeers int `toml:",omitempty"` // Maximum number of LES client peers
+
+	// Ultra Light client options
+	ULC *ULCConfig `toml:",omitempty"`
 
 	// Database options
 	SkipBcVersionCheck bool `toml:"-"`
