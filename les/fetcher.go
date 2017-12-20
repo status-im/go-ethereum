@@ -504,7 +504,12 @@ func (f *lightFetcher) processResponse(req fetchRequest, resp fetchResponse) boo
 	for i, header := range resp.headers {
 		headers[int(req.amount)-1-i] = header
 	}
-	if _, err := f.chain.InsertHeaderChain(headers, 1); err != nil {
+
+	checkFreq := 1
+	if f.pm.server.ulc != nil {
+		checkFreq = 0
+	}
+	if _, err := f.chain.InsertHeaderChain(headers, checkFreq); err != nil {
 		if err == consensus.ErrFutureBlock {
 			return true
 		}
