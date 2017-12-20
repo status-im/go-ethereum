@@ -733,8 +733,8 @@ func setIPC(ctx *cli.Context, cfg *node.Config) {
 	}
 }
 
-// SetULC setup ULC config from file if given.
-func SetULC(ctx *cli.Context, cfg *eth.Config, p2pCfg *p2p.Config) {
+// SetULCFromFile setup ULC config from file if given.
+func SetULCFromFile(ctx *cli.Context, cfg *eth.Config, p2pCfg *p2p.Config) {
 	path := ctx.GlobalString(ULCModeConfigFlag.Name)
 	if path == "" {
 		return
@@ -750,23 +750,7 @@ func SetULC(ctx *cli.Context, cfg *eth.Config, p2pCfg *p2p.Config) {
 		Fatalf(err.Error())
 	}
 
-	if len(cfg.ULC.TrustedNodes) == 0 {
-		return
-	}
-
-	if cfg.ULC.MinTrustedFraction <= 0 || cfg.ULC.MinTrustedFraction > 100 {
-		cfg.ULC.MinTrustedFraction = eth.DefaultConfig.ULC.MinTrustedFraction
-	}
-
-	p2pCfg.TrustedNodes = make([]*discover.Node, 0, len(cfg.ULC.TrustedNodes))
-	for _, url := range cfg.ULC.TrustedNodes {
-		node, err := discover.ParseNode(url)
-		if err != nil {
-			log.Error("Trusted node URL invalid", "enode", url, "err", err)
-			continue
-		}
-		p2pCfg.TrustedNodes = append(p2pCfg.TrustedNodes, node)
-	}
+	eth.SetULC(cfg.ULC, p2pCfg)
 }
 
 // makeDatabaseHandles raises out the number of allowed file handles per process
