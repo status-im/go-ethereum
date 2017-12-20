@@ -45,6 +45,7 @@ type LesServer struct {
 	lesTopics       []discv5.Topic
 	privateKey      *ecdsa.PrivateKey
 	quitSync        chan struct{}
+	ulc             *ulc
 
 	chtIndexer, bloomTrieIndexer *core.ChainIndexer
 }
@@ -69,6 +70,10 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 		chtIndexer:       light.NewChtIndexer(eth.ChainDb(), false),
 		bloomTrieIndexer: light.NewBloomTrieIndexer(eth.ChainDb(), false),
 	}
+	if config.ULC != nil {
+		srv.ulc = newULC(config.ULC)
+	}
+
 	logger := log.New()
 
 	chtV1SectionCount, _, _ := srv.chtIndexer.Sections() // indexer still uses LES/1 4k section size for backwards server compatibility
@@ -100,6 +105,20 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 	srv.fcManager = flowcontrol.NewClientManager(uint64(config.LightServ), 10, 1000000000)
 	srv.fcCostStats = newCostStats(eth.ChainDb())
 	return srv, nil
+}
+
+type ulc struct {
+	trusted            map[string]struct{}
+	minTrustedFraction int
+}
+
+func newULC(ulcConfig *eth.ULCConfig) *ulc {
+	m := make(map[string]struct{}, len(ulcConfig.TrustedNodes))
+	for _, id := range ulcConfig.TrustedNodes {
+		m[id] = struct{}{}
+	}
+
+	return &ulc{m, ulcConfig.MinTrustedFraction}
 }
 
 func (s *LesServer) Protocols() []p2p.Protocol {

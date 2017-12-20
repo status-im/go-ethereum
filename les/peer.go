@@ -44,7 +44,7 @@ var (
 const maxResponseErrors = 50 // number of invalid responses tolerated (makes the protocol less brittle but still avoids spam)
 
 const (
-	announceTypeNone = iota
+	announceTypeNone   = iota
 	announceTypeSimple
 	announceTypeSigned
 )
@@ -422,6 +422,7 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 	if err != nil {
 		return err
 	}
+
 	recv := recvList.decode()
 
 	var rGenesis, rHash common.Hash
@@ -463,6 +464,12 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 		}*/
 		if recv.get("announceType", &p.announceType) != nil {
 			p.announceType = announceTypeSimple
+
+			if server.ulc != nil {
+				if _, ok := server.ulc.trusted[p.id]; ok {
+					p.announceType = announceTypeSigned
+				}
+			}
 		}
 		p.fcClient = flowcontrol.NewClientNode(server.fcManager, server.defParams)
 	} else {
