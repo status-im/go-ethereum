@@ -467,7 +467,7 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 			p.announceType = announceTypeSimple
 
 			if server.ulc != nil {
-				if _, ok := server.ulc.trusted[p.id]; ok {
+				if _, ok := server.ulc.trusted[p.ID().String()]; ok {
 					p.announceType = announceTypeSigned
 				}
 			}
