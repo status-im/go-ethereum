@@ -42,7 +42,6 @@ var DefaultConfig = Config{
 		DatasetsInMem:  1,
 		DatasetsOnDisk: 2,
 	},
-	ULC:           &ULCConfig{MinTrustedFraction: 75},
 	NetworkId:     1,
 	LightPeers:    20,
 	DatabaseCache: 128,
