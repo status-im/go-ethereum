@@ -52,7 +52,7 @@ type LesServer struct {
 
 func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 	quitSync := make(chan struct{})
-	pm, err := NewProtocolManager(eth.BlockChain().Config(), false, ServerProtocolVersions, config.NetworkId, eth.EventMux(), eth.Engine(), newPeerSet(), eth.BlockChain(), eth.TxPool(), eth.ChainDb(), nil, nil, quitSync, new(sync.WaitGroup))
+	pm, err := NewProtocolManager(eth.BlockChain().Config(), false, ServerProtocolVersions, config.NetworkId, eth.EventMux(), eth.Engine(), newPeerSet(), eth.BlockChain(), eth.TxPool(), eth.ChainDb(), nil, nil, quitSync, new(sync.WaitGroup), config.ULC)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +113,10 @@ type ulc struct {
 }
 
 func newULC(ulcConfig *eth.ULCConfig) *ulc {
+	if ulcConfig == nil {
+		return nil
+	}
+
 	m := make(map[string]struct{}, len(ulcConfig.TrustedNodes))
 	for _, id := range ulcConfig.TrustedNodes {
 		m[id] = struct{}{}
