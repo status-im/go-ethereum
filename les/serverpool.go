@@ -469,6 +469,10 @@ func (pool *serverPool) updateCheckDial(entry *poolEntry) {
 // checkDial checks if new dials can/should be made. It tries to select servers both
 // based on good statistics and recent discovery.
 func (pool *serverPool) checkDial() {
+	for _, e := range pool.trustedQueue.queue {
+		pool.dial(e, false)
+	}
+
 	fillWithKnownSelects := !pool.fastDiscover
 	for pool.knownSelected < targetKnownSelect {
 		entry := pool.knownSelect.choose()
@@ -496,10 +500,6 @@ func (pool *serverPool) checkDial() {
 			}
 			pool.dial((*poolEntry)(entry.(*knownEntry)), true)
 		}
-	}
-
-	for _, e := range pool.trustedQueue.queue {
-		pool.dial(e, false)
 	}
 }
 

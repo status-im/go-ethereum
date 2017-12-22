@@ -128,7 +128,7 @@ type ProtocolManager struct {
 
 // NewProtocolManager returns a new ethereum sub protocol manager. The Ethereum sub protocol manages peers capable
 // with the ethereum network.
-func NewProtocolManager(chainConfig *params.ChainConfig, lightSync bool, protocolVersions []uint, networkId uint64, mux *event.TypeMux, engine consensus.Engine, peers *peerSet, blockchain BlockChain, txpool txPool, chainDb ethdb.Database, odr *LesOdr, txrelay *LesTxRelay, quitSync chan struct{}, wg *sync.WaitGroup) (*ProtocolManager, error) {
+func NewProtocolManager(chainConfig *params.ChainConfig, lightSync bool, protocolVersions []uint, networkId uint64, mux *event.TypeMux, engine consensus.Engine, peers *peerSet, blockchain BlockChain, txpool txPool, chainDb ethdb.Database, odr *LesOdr, txrelay *LesTxRelay, quitSync chan struct{}, wg *sync.WaitGroup, ulcConfig *eth.ULCConfig) (*ProtocolManager, error) {
 	// Create the protocol manager with the base fields
 	manager := &ProtocolManager{
 		lightSync:   lightSync,
@@ -149,6 +149,10 @@ func NewProtocolManager(chainConfig *params.ChainConfig, lightSync bool, protoco
 	if odr != nil {
 		manager.retriever = odr.retriever
 		manager.reqDist = odr.retriever.dist
+	}
+
+	if ulcConfig != nil {
+		manager.server = &LesServer{ulc: newULC(ulcConfig)}
 	}
 
 	// Initiate a sub-protocol for every implemented version we can handle
