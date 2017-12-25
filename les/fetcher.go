@@ -42,7 +42,7 @@ const (
 type lightFetcher struct {
 	pm    *ProtocolManager
 	odr   *LesOdr
-	chain *light.LightChain
+	chain lightChain
 
 	lock            sync.Mutex // lock protects access to the fetcher's internal state variables except sent requests
 	maxConfirmedTd  *big.Int
@@ -56,6 +56,14 @@ type lightFetcher struct {
 	deliverChn chan fetchResponse
 	timeoutChn chan uint64
 	requestChn chan bool // true if initiated from outside
+}
+
+//lightChain
+type lightChain interface {
+	BlockChain
+	LockChain()
+	UnlockChain()
+	GetTd(hash common.Hash, number uint64) *big.Int
 }
 
 // fetcherPeerInfo holds fetcher-specific information about each active peer
@@ -393,11 +401,36 @@ func (f *lightFetcher) requestedID(reqID uint64) bool {
 // to be downloaded starting from the head backwards is also returned
 func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 	var (
-		bestHash   common.Hash
-		bestAmount uint64
+		bestHash    common.Hash
+		bestAmount  uint64
+		bestTd      *big.Int
+		bestSyncing bool
 	)
-	bestTd := f.maxConfirmedTd
-	bestSyncing := false
+	if f.pm == nil || f.pm.server == nil || f.pm.server.ulc == nil {
+		bestHash, bestAmount, bestTd, bestSyncing = f.itFindBestValuesForLes()
+	} else {
+		bestHash, bestAmount, bestTd, bestSyncing = f.itFindBestValuesForULC()
+	}
+
+	if bestTd == f.maxConfirmedTd {
+		return nil, 0
+	}
+
+	f.syncing = bestSyncing
+
+	var rq *distReq
+	reqID := genReqID()
+	if f.syncing {
+		rq = f.newFetcherDistReqForSync(bestHash)
+	} else {
+		rq = f.newFetcherDistReq(bestHash, reqID, bestAmount)
+	}
+	return rq, reqID
+}
+
+func (f *lightFetcher) itFindBestValuesForLes() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
+	bestTd = f.maxConfirmedTd
+	bestSyncing = false
 
 	for p, fp := range f.peers {
 		for hash, n := range fp.nodeByHash {
@@ -412,81 +445,120 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 			}
 		}
 	}
-	if bestTd == f.maxConfirmedTd {
-		return nil, 0
+	return
+}
+
+func (f *lightFetcher) itFindBestValuesForULC() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
+	bestTd = f.maxConfirmedTd
+	bestSyncing = false
+
+	for p, fp := range f.peers {
+		for hash, n := range fp.nodeByHash {
+			if _, ok := f.pm.server.ulc.trusted[p.id]; ok == false {
+				continue
+			}
+
+			if f.checkKnownNode(p, n) || n.requested {
+				continue
+			}
+
+			amount := f.requestAmount(p, n)
+			if (bestTd == nil || n.td.Cmp(bestTd) > 0) && f.checkTrusted(hash, f.pm.server.ulc.minTrustedFraction) {
+				bestHash = hash
+				bestTd = n.td
+				bestAmount = amount
+				bestSyncing = fp.bestConfirmed == nil || fp.root == nil || !f.checkKnownNode(p, fp.root)
+			}
+		}
+	}
+	return
+}
+func (f *lightFetcher) checkTrusted(hash common.Hash, minTrustedFraction int) bool {
+	numPeers := len(f.peers)
+	var numAgreed int
+	for _, fp := range f.peers {
+		if _, ok := fp.nodeByHash[hash]; ok == false {
+			continue
+		}
+
+		numAgreed = numAgreed + 1
 	}
 
-	f.syncing = bestSyncing
+	if 100*numAgreed/numPeers > minTrustedFraction {
+		return true
+	}
 
-	var rq *distReq
-	reqID := genReqID()
-	if f.syncing {
-		rq = &distReq{
-			getCost: func(dp distPeer) uint64 {
-				return 0
-			},
-			canSend: func(dp distPeer) bool {
-				p := dp.(*peer)
-				f.lock.Lock()
-				defer f.lock.Unlock()
+	return false
+}
 
-				fp := f.peers[p]
-				return fp != nil && fp.nodeByHash[bestHash] != nil
-			},
-			request: func(dp distPeer) func() {
-				go func() {
-					p := dp.(*peer)
-					p.Log().Debug("Synchronisation started")
-					f.pm.synchronise(p)
-					f.syncDone <- p
-				}()
-				return nil
-			},
-		}
-	} else {
-		rq = &distReq{
-			getCost: func(dp distPeer) uint64 {
+func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
+	return &distReq{
+		getCost: func(dp distPeer) uint64 {
+			return 0
+		},
+		canSend: func(dp distPeer) bool {
+			p := dp.(*peer)
+			f.lock.Lock()
+			defer f.lock.Unlock()
+			fp := f.peers[p]
+			return fp != nil && fp.nodeByHash[bestHash] != nil
+		},
+		request: func(dp distPeer) func() {
+			go func() {
 				p := dp.(*peer)
-				return p.GetRequestCost(GetBlockHeadersMsg, int(bestAmount))
-			},
-			canSend: func(dp distPeer) bool {
-				p := dp.(*peer)
-				f.lock.Lock()
-				defer f.lock.Unlock()
+				p.Log().Debug("Synchronisation started")
+				f.pm.synchronise(p)
+				f.syncDone <- p
+			}()
+			return nil
+		},
+	}
 
-				fp := f.peers[p]
-				if fp == nil {
-					return false
-				}
+}
+
+func (f *lightFetcher) newFetcherDistReq(bestHash common.Hash, reqID uint64, bestAmount uint64) *distReq {
+	return &distReq{
+		getCost: func(dp distPeer) uint64 {
+			p := dp.(*peer)
+			return p.GetRequestCost(GetBlockHeadersMsg, int(bestAmount))
+		},
+		canSend: func(dp distPeer) bool {
+			p := dp.(*peer)
+			f.lock.Lock()
+			defer f.lock.Unlock()
+
+			fp := f.peers[p]
+			if fp == nil {
+				return false
+			}
+			n := fp.nodeByHash[bestHash]
+			return n != nil && !n.requested
+		},
+		request: func(dp distPeer) func() {
+			p := dp.(*peer)
+			f.lock.Lock()
+			fp := f.peers[p]
+			if fp != nil {
 				n := fp.nodeByHash[bestHash]
-				return n != nil && !n.requested
-			},
-			request: func(dp distPeer) func() {
-				p := dp.(*peer)
-				f.lock.Lock()
-				fp := f.peers[p]
-				if fp != nil {
-					n := fp.nodeByHash[bestHash]
-					if n != nil {
-						n.requested = true
-					}
+				if n != nil {
+					n.requested = true
 				}
-				f.lock.Unlock()
+			}
+			f.lock.Unlock()
 
-				cost := p.GetRequestCost(GetBlockHeadersMsg, int(bestAmount))
-				p.fcServer.QueueRequest(reqID, cost)
-				f.reqMu.Lock()
-				f.requested[reqID] = fetchRequest{hash: bestHash, amount: bestAmount, peer: p, sent: mclock.Now()}
-				f.reqMu.Unlock()
-				go func() {
-					time.Sleep(hardRequestTimeout)
-					f.timeoutChn <- reqID
-				}()
-				return func() { p.RequestHeadersByHash(reqID, cost, bestHash, int(bestAmount), 0, true) }
-			},
-		}
+			cost := p.GetRequestCost(GetBlockHeadersMsg, int(bestAmount))
+			p.fcServer.QueueRequest(reqID, cost)
+			f.reqMu.Lock()
+			f.requested[reqID] = fetchRequest{hash: bestHash, amount: bestAmount, peer: p, sent: mclock.Now()}
+			f.reqMu.Unlock()
+			go func() {
+				time.Sleep(hardRequestTimeout)
+				f.timeoutChn <- reqID
+			}()
+			return func() { p.RequestHeadersByHash(reqID, cost, bestHash, int(bestAmount), 0, true) }
+		},
 	}
-	return rq, reqID
+
 }
 
 // deliverHeaders delivers header download request responses for processing
