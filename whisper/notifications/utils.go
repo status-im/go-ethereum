@@ -1,12 +1,13 @@
 package notifications
 
 import (
+	"crypto/sha256"
 	"crypto/sha512"
 	"errors"
-	"crypto/sha256"
 
 	crand "crypto/rand"
-	whisper "github.com/ethereum/go-ethereum/whisper/whisperv5"
+
+	whisper "github.com/ethereum/go-ethereum/whisper/whisperv6"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -63,7 +64,7 @@ func deriveKeyMaterial(key []byte, version uint64) (derivedKey []byte, err error
 }
 
 // MakeTopic returns Whisper topic *as bytes array* by generating cryptographic key from the provided password
-func MakeTopicAsBytes(password []byte) ([]byte) {
+func MakeTopicAsBytes(password []byte) []byte {
 	topic := make([]byte, int(whisper.TopicLength))
 	x := pbkdf2.Key(password, password, 8196, 128, sha512.New)
 	for i := 0; i < len(x); i++ {
