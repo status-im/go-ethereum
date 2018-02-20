@@ -84,6 +84,7 @@ var (
 		utils.TxPoolLifetimeFlag,
 		utils.FastSyncFlag,
 		utils.LightModeFlag,
+		utils.ULCModeConfigFlag,
 		utils.SyncModeFlag,
 		utils.GCModeFlag,
 		utils.LightServFlag,

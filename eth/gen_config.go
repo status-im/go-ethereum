@@ -20,10 +20,11 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		Genesis                 *core.Genesis `toml:",omitempty"`
 		NetworkId               uint64
 		SyncMode                downloader.SyncMode
-		LightServ               int  `toml:",omitempty"`
-		LightPeers              int  `toml:",omitempty"`
-		SkipBcVersionCheck      bool `toml:"-"`
-		DatabaseHandles         int  `toml:"-"`
+		LightServ               int        `toml:",omitempty"`
+		LightPeers              int        `toml:",omitempty"`
+		ULC                     *ULCConfig `toml:",omitempty"`
+		SkipBcVersionCheck      bool       `toml:"-"`
+		DatabaseHandles         int        `toml:"-"`
 		DatabaseCache           int
 		Etherbase               common.Address `toml:",omitempty"`
 		MinerThreads            int            `toml:",omitempty"`
@@ -41,6 +42,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.SyncMode = c.SyncMode
 	enc.LightServ = c.LightServ
 	enc.LightPeers = c.LightPeers
+	enc.ULC = c.ULC
 	enc.SkipBcVersionCheck = c.SkipBcVersionCheck
 	enc.DatabaseHandles = c.DatabaseHandles
 	enc.DatabaseCache = c.DatabaseCache
@@ -65,6 +67,11 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		LightPeers              *int  `toml:",omitempty"`
 		SkipBcVersionCheck      *bool `toml:"-"`
 		DatabaseHandles         *int  `toml:"-"`
+		LightServ               *int       `toml:",omitempty"`
+		LightPeers              *int       `toml:",omitempty"`
+		ULC                     *ULCConfig `toml:",omitempty"`
+		SkipBcVersionCheck      *bool      `toml:"-"`
+		DatabaseHandles         *int       `toml:"-"`
 		DatabaseCache           *int
 		Etherbase               *common.Address `toml:",omitempty"`
 		MinerThreads            *int            `toml:",omitempty"`
@@ -94,6 +101,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.LightPeers != nil {
 		c.LightPeers = *dec.LightPeers
+	}
+	if dec.ULC != nil {
+		c.ULC = dec.ULC
 	}
 	if dec.SkipBcVersionCheck != nil {
 		c.SkipBcVersionCheck = *dec.SkipBcVersionCheck
