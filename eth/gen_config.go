@@ -63,15 +63,11 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		Genesis                 *core.Genesis `toml:",omitempty"`
 		NetworkId               *uint64
 		SyncMode                *downloader.SyncMode
-		LightServ               *int  `toml:",omitempty"`
-		LightPeers              *int  `toml:",omitempty"`
-		SkipBcVersionCheck      *bool `toml:"-"`
-		DatabaseHandles         *int  `toml:"-"`
 		LightServ               *int       `toml:",omitempty"`
 		LightPeers              *int       `toml:",omitempty"`
-		ULC                     *ULCConfig `toml:",omitempty"`
 		SkipBcVersionCheck      *bool      `toml:"-"`
 		DatabaseHandles         *int       `toml:"-"`
+		ULC                     *ULCConfig `toml:",omitempty"`
 		DatabaseCache           *int
 		Etherbase               *common.Address `toml:",omitempty"`
 		MinerThreads            *int            `toml:",omitempty"`

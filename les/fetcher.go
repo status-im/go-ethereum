@@ -63,7 +63,6 @@ type lightChain interface {
 	BlockChain
 	LockChain()
 	UnlockChain()
-	GetTd(hash common.Hash, number uint64) *big.Int
 }
 
 // fetcherPeerInfo holds fetcher-specific information about each active peer
