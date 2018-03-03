@@ -6,6 +6,8 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/discover"
 )
 
+const defaultUTCMinTrustedFraction = 75
+
 // ULCConfig is a Ultra Light client options.
 type ULCConfig struct {
 	TrustedNodes       []string `toml:",omitempty"` // A list of trusted servers
@@ -18,8 +20,7 @@ func SetULC(ulc *ULCConfig, p2pCfg *p2p.Config) {
 		return
 	}
 
-	const defaultUTCMinTrustedFraction  = 75
-	if ulc.MinTrustedFraction < 0 || ulc.MinTrustedFraction > 100 {
+	if ulc.MinTrustedFraction < 0 || ulc.MinTrustedFraction >= 100 {
 		ulc.MinTrustedFraction = defaultUTCMinTrustedFraction
 	}
 
