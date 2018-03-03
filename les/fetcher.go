@@ -576,7 +576,7 @@ func (f *lightFetcher) processResponse(req fetchRequest, resp fetchResponse) boo
 	}
 
 	checkFreq := 1
-	if f.pm.server.ulc != nil {
+	if f.pm.server.ulc != nil && len(f.pm.server.ulc.trusted) > 0 {
 		checkFreq = 0
 	}
 	if _, err := f.chain.InsertHeaderChain(headers, checkFreq); err != nil {
