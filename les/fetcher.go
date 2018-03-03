@@ -557,7 +557,6 @@ func (f *lightFetcher) newFetcherDistReq(bestHash common.Hash, reqID uint64, bes
 			return func() { p.RequestHeadersByHash(reqID, cost, bestHash, int(bestAmount), 0, true) }
 		},
 	}
-
 }
 
 // deliverHeaders delivers header download request responses for processing

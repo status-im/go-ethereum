@@ -97,8 +97,9 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 
 type lightChainStub struct {
 	BlockChain
-	tds     map[common.Hash]*big.Int
-	headers map[common.Hash]*types.Header
+	tds                         map[common.Hash]*big.Int
+	headers                     map[common.Hash]*types.Header
+	insertHeaderChainAssertFunc func(chain []*types.Header, checkFreq int) (int, error)
 }
 
 func (l *lightChainStub) GetHeader(hash common.Hash, number uint64) *types.Header {
@@ -117,4 +118,8 @@ func (l *lightChainStub) GetTd(hash common.Hash, number uint64) *big.Int {
 		return td
 	}
 	return nil
+}
+
+func (l *lightChainStub) InsertHeaderChain(chain []*types.Header, checkFreq int) (int, error) {
+	return l.insertHeaderChainAssertFunc(chain, checkFreq)
 }
