@@ -38,7 +38,7 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 		},
 		maxConfirmedTd: ftn1.td,
 		peers: map[*peer]*fetcherPeerInfo{
-			&peer{
+			{
 				id: "peer1",
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
@@ -46,7 +46,7 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 					ftn2.hash: ftn2,
 				},
 			},
-			&peer{
+			{
 				id: "peer2",
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
@@ -54,7 +54,7 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 					ftn2.hash: ftn2,
 				},
 			},
-			&peer{
+			{
 				id: "peer3",
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
@@ -63,7 +63,7 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 					ftn3.hash: ftn3,
 				},
 			},
-			&peer{
+			{
 				id: "peer4",
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{

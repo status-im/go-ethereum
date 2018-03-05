@@ -44,7 +44,7 @@ var (
 const maxResponseErrors = 50 // number of invalid responses tolerated (makes the protocol less brittle but still avoids spam)
 
 const (
-	announceTypeNone   = iota
+	announceTypeNone = iota
 	announceTypeSimple
 	announceTypeSigned
 )
