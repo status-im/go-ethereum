@@ -33,42 +33,6 @@ import (
 // TESTS
 // -----
 
-// TestStatement tests creating and accessing statements.
-func TestStatement(t *testing.T) {
-	k := []byte("foo")
-	v := []byte("bar")
-	st := observer.NewStatement(k, v)
-	// Testing simple access.
-	if tk := st.Key(); !bytes.Equal(tk, k) {
-		t.Errorf("returned key %v is not key %v", tk, k)
-	}
-	if tv := st.Value(); !bytes.Equal(tv, v) {
-		t.Errorf("returned value %v is not value %v", tv, v)
-	}
-	// Testing encoding and decoding.
-	var buf bytes.Buffer
-	err := st.EncodeRLP(&buf)
-	if err != nil {
-		t.Errorf("encoding to RLP returned error: %v", err)
-	}
-	var tst observer.Statement
-	err = tst.DecodeRLP(rlp.NewStream(&buf, 0))
-	if err != nil {
-		t.Errorf("decoding from RLP returned error: %v", err)
-	}
-	if tk := tst.Key(); !bytes.Equal(tk, k) {
-		t.Errorf("returned key %v is not key %v", tk, k)
-	}
-	if tv := tst.Value(); !bytes.Equal(tv, v) {
-		t.Errorf("returned value %v is not value %v", tv, v)
-	}
-	sthb := st.Hash().Bytes()
-	tsthb := tst.Hash().Bytes()
-	if !bytes.Equal(sthb, tsthb) {
-		t.Errorf("hashes of original and encoded/decoded one differ")
-	}
-}
-
 // TestEmptyBlock tests creating and accessing empty blocks.
 func TestEmptyBlock(t *testing.T) {
 	// Infrastructure.

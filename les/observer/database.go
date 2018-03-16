@@ -17,7 +17,6 @@
 package observer
 
 import (
-	"bytes"
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -44,7 +43,7 @@ func GetBlock(db ethdb.Database, number uint64) *Block {
 		return nil
 	}
 	b := new(Block)
-	if err := rlp.Decode(bytes.NewReader(data), b); err != nil {
+	if err := rlp.DecodeBytes(data, b); err != nil {
 		log.Error("invalid block RLP", "number", number, "err", err)
 		return nil
 	}
@@ -62,7 +61,7 @@ func GetHeadBlock(db ethdb.Database) *Block {
 		return nil
 	}
 	b := new(Block)
-	if err := rlp.Decode(bytes.NewReader(data), b); err != nil {
+	if err := rlp.DecodeBytes(data, b); err != nil {
 		log.Error("invalid block RLP", "key", key, "err", err)
 		return nil
 	}
@@ -72,12 +71,13 @@ func GetHeadBlock(db ethdb.Database) *Block {
 // WriteBlock serializes and writes block into the database. It also
 // updates the pointer to the head block.
 func WriteBlock(db ethdb.Database, block *Block) error {
-	var buf bytes.Buffer
-	if err := block.EncodeRLP(&buf); err != nil {
+	data, err := rlp.EncodeToBytes(block)
+	if err != nil {
+		log.Crit("failed to encode observer chain block data", "err", err)
 		return err
 	}
 	key := mkBlockKey(block.header.Number)
-	if err := db.Put(key, buf.Bytes()); err != nil {
+	if err := db.Put(key, data); err != nil {
 		log.Crit("failed to store observer chain block data", "err", err)
 		return err
 	}

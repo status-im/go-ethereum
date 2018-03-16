@@ -21,7 +21,6 @@ import (
 	"encoding/binary"
 	"io"
 	"math/big"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -41,7 +40,7 @@ type Header struct {
 	PrevHash      common.Hash `json:"prevHash"       gencodec:"required"`
 	Number        uint64      `json:"number"         gencodec:"required"`
 	Time          uint64      `json:"time"           gencodec:"required"`
-	TrieRoot      common.Hash `json:"trieRoot"      gencodec:"required"`
+	TrieRoot      common.Hash `json:"trieRoot"       gencodec:"required"`
 	SignatureType string      `json:"signatureType"  gencodec:"required"`
 	Signature     []byte      `json:"signature"      gencodec:"required"`
 }
@@ -50,6 +49,13 @@ type Header struct {
 // hash of its RLP encoding.
 func (h *Header) hash() common.Hash {
 	return rlpHash(h)
+}
+
+// size returns the storage size of the header.
+func (h *Header) size() common.StorageSize {
+	c := writeCounter(0)
+	rlp.Encode(&c, h)
+	return common.StorageSize(c)
 }
 
 // sign adds a signature to the block heater by the given private key.
@@ -72,10 +78,8 @@ func (h *Header) sign(privKey *ecdsa.PrivateKey) {
 // Block represents one block on the observer chain.
 type Block struct {
 	header *Header
-
-	// Caches.
-	hash atomic.Value
-	size atomic.Value
+	hash   common.Hash
+	size   common.StorageSize
 }
 
 // NewBlock creates a new first block (genesis block).
@@ -90,6 +94,8 @@ func NewBlock(privKey *ecdsa.PrivateKey) *Block {
 		},
 	}
 	b.header.sign(privKey)
+	b.hash = b.header.hash()
+	b.size = b.header.size()
 	return b
 }
 
@@ -106,6 +112,8 @@ func (b *Block) CreateSuccessor(trieRoot common.Hash, privKey *ecdsa.PrivateKey)
 		},
 	}
 	sb.header.sign(privKey)
+	sb.hash = sb.header.hash()
+	sb.size = sb.header.size()
 	return sb
 }
 
@@ -142,12 +150,7 @@ func (b *Block) Signature() []byte {
 // Hash returns the keccak256 hash of the block's header.
 // The hash is computed on the first call and cached thereafter.
 func (b *Block) Hash() common.Hash {
-	if hash := b.hash.Load(); hash != nil {
-		return hash.(common.Hash)
-	}
-	v := b.header.hash()
-	b.hash.Store(v)
-	return v
+	return b.hash
 }
 
 // PrevHash returns the hash of the previous block.
@@ -157,13 +160,7 @@ func (b *Block) PrevHash() common.Hash {
 
 // Size returns the storage size of the block.
 func (b *Block) Size() common.StorageSize {
-	if size := b.size.Load(); size != nil {
-		return size.(common.StorageSize)
-	}
-	c := writeCounter(0)
-	rlp.Encode(&c, b)
-	b.size.Store(common.StorageSize(c))
-	return common.StorageSize(c)
+	return b.size
 }
 
 // EncodeRLP implements rlp.Encoder.
@@ -174,11 +171,11 @@ func (b *Block) EncodeRLP(w io.Writer) error {
 // DecodeRLP implements rlp.Decoder.
 func (b *Block) DecodeRLP(s *rlp.Stream) error {
 	var h Header
-	_, size, _ := s.Kind()
 	if err := s.Decode(&h); err != nil {
 		return err
 	}
 	b.header = &h
-	b.size.Store(common.StorageSize(rlp.ListSize(size)))
+	b.hash = b.header.hash()
+	b.size = b.header.size()
 	return nil
 }
