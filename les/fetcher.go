@@ -453,7 +453,7 @@ func (f *lightFetcher) itFindBestValuesForULC() (bestHash common.Hash, bestAmoun
 
 	for p, fp := range f.peers {
 		for hash, n := range fp.nodeByHash {
-			if _, ok := f.pm.server.ulc.trusted[p.id]; ok == false {
+			if _, ok := f.pm.server.ulc.trusted[p.id]; !ok {
 				continue
 			}
 
@@ -476,18 +476,14 @@ func (f *lightFetcher) checkTrusted(hash common.Hash, minTrustedFraction int) bo
 	numPeers := len(f.peers)
 	var numAgreed int
 	for _, fp := range f.peers {
-		if _, ok := fp.nodeByHash[hash]; ok == false {
+		if _, ok := fp.nodeByHash[hash]; !ok {
 			continue
 		}
 
 		numAgreed = numAgreed + 1
 	}
 
-	if 100*numAgreed/numPeers > minTrustedFraction {
-		return true
-	}
-
-	return false
+	return 100*numAgreed/numPeers > minTrustedFraction
 }
 
 func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
@@ -497,6 +493,9 @@ func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
 		},
 		canSend: func(dp distPeer) bool {
 			p := dp.(*peer)
+			if p.allowedRequests != allRequests {
+				return false
+			}
 			f.lock.Lock()
 			defer f.lock.Unlock()
 			fp := f.peers[p]
@@ -523,6 +522,10 @@ func (f *lightFetcher) newFetcherDistReq(bestHash common.Hash, reqID uint64, bes
 		},
 		canSend: func(dp distPeer) bool {
 			p := dp.(*peer)
+			if p.allowedRequests != allRequests {
+				return false
+			}
+
 			f.lock.Lock()
 			defer f.lock.Unlock()
 

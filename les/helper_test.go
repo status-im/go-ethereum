@@ -308,6 +308,13 @@ func (p *testPeer) handshake(t *testing.T, td *big.Int, head common.Hash, headNu
 	expList = expList.add("flowControl/MRR", uint64(1))
 	expList = expList.add("flowControl/MRC", testRCL())
 
+	//var kv keyValueList
+	//msg, err := p.app.ReadMsg()
+	//t.Log(err)
+	//msg.Decode(&kv)
+	//t.Fatal(kv)
+	//[{protocolVersion [1]} {networkId [1]} {headTd [132 4 30 0 0]} {headHash [160 125 69 111 26 172 233 200 16 23 215 15 198 132 121 206 250 12 59 41 82 245 51 198 252 254 168 11 162 212 207 86 190]} {headNum [130 2 15]} {genesisHash [160 233 102 66 91 250 196 145 214 140 22 208 229 199 65 196 222 197 98 48 118 112 8 133 4 163 222 173 239 151 118 153 72]} {announceType [1]} {serveHeaders [128]} {serveChainSince [128]} {serveStateSince [128]} {txRelay [128]} {flowControl/BL [100]} {flowControl/MRR [1]} {flowControl/MRC [236 195 2 128 128 195 4 128 128 195 10 128 128 195 6 128 128 195 8 128 128 195 12 128 128 195 19 128 128 195 20 128 128 195 13 128 128 195 15 128 128 195 17 128 128]}]
+
 	if err := p2p.ExpectMsg(p.app, StatusMsg, expList); err != nil {
 		t.Fatalf("status recv: %v", err)
 	}
