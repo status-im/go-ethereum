@@ -49,6 +49,12 @@ const (
 	announceTypeSigned
 )
 
+const (
+	allRequests = iota
+	onlyAnnounceRequests
+	noRequests
+)
+
 type peer struct {
 	*p2p.Peer
 	pubKey *ecdsa.PublicKey
@@ -76,6 +82,8 @@ type peer struct {
 	fcServer       *flowcontrol.ServerNode // nil if the peer is client only
 	fcServerParams *flowcontrol.ServerParams
 	fcCosts        requestCostTable
+
+	allowedRequests uint64
 }
 
 func newPeer(version int, network uint64, p *p2p.Peer, rw p2p.MsgReadWriter) *peer {
@@ -414,10 +422,20 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 		list := server.fcCostStats.getCurrentList()
 		send = send.add("flowControl/MRC", list)
 		p.fcCosts = list.decode()
+		if server.ulc != nil {
+			if _, ok := server.ulc.trusted[p.ID().String()]; ok {
+				send = send.add("allowedRequests", uint64(onlyAnnounceRequests))
+				send = send.add("announceType", uint64(announceTypeSigned))
+			} else {
+				send = send.add("allowedRequests", uint64(noRequests))
+				send = send.add("announceType", uint64(announceTypeSimple))
+			}
+		}
 	} else {
 		p.requestAnnounceType = announceTypeSimple // set to default until "very light" client mode is implemented
 		send = send.add("announceType", p.requestAnnounceType)
 	}
+
 	recvList, err := p.sendReceiveHandshake(send)
 	if err != nil {
 		return err
@@ -496,6 +514,11 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 		p.fcServerParams = params
 		p.fcServer = flowcontrol.NewServerNode(params)
 		p.fcCosts = MRC.decode()
+	}
+
+	//which requests could receive the peer
+	if recv.get("allowedRequests", &p.allowedRequests) != nil {
+		p.allowedRequests = allRequests
 	}
 
 	p.headInfo = &announceData{Td: rTd, Hash: rHash, Number: rNum}

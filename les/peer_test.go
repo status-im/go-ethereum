@@ -2,7 +2,6 @@ package les
 
 import (
 	"crypto/rand"
-	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/les/flowcontrol"
@@ -25,39 +24,94 @@ var (
 	td      = big.NewInt(123)
 )
 
-func TestPeer_Handshake_AnnounceTypeSigned_ForTrustedPeers_PeerInTrusted_Success(t *testing.T) {
+//ulc connects to trusted peer and mark it
+func TestPeer_Handshake_AnnounceTypeSignedAndOnlyAnnounceRequests_ForTrustedPeers_PeerInTrusted_Success(t *testing.T) {
 	var id discover.NodeID
 	rand.Read(id[:])
 
-	p := peer{
-		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
-		version: protocol_version,
-		rw:      &rwStub{},
-		network: test_networkid,
-	}
+	//current ulc server
 	s := generateLesServer()
 	s.ulc = newULC(&eth.ULCConfig{
 		TrustedNodes: []string{id.String()},
 	})
 	s.ulc.trusted[id.String()] = struct{}{}
 
+	//peer to connect(on ulc side)
+	p := peer{
+		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
+		version: protocol_version,
+		rw: &rwStub{
+			WriteHook: func(recvList keyValueList) {
+				//checking that ulc sends to peer allowedRequests=onlyAnnounceRequests and announceType = announceTypeSigned
+				recv := recvList.decode()
+				var a, reqType uint64
+				err := recv.get("allowedRequests", &a)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if a != onlyAnnounceRequests {
+					t.Fatal("Expected onlyAnnounceRequests")
+				}
+				err = recv.get("announceType", &reqType)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if reqType != announceTypeSigned {
+					t.Fatal("Expected announceTypeSigned")
+				}
+			},
+		},
+		network: test_networkid,
+	}
+
 	err := p.Handshake(td, hash, headNum, genesis, s)
 	if err != nil {
 		t.Fatalf("Handshake error: %s", err)
 	}
+
 	if p.announceType != announceTypeSigned {
 		t.Fatal("Incorrect announceType")
 	}
 }
 
 func TestPeer_Handshake_AnnounceTypeSigned_ForTrustedPeers_PeerNotInTrusted_Fail(t *testing.T) {
+	var id discover.NodeID
+	rand.Read(id[:])
+
 	p := peer{
+		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
 		version: protocol_version,
-		rw:      &rwStub{},
+		rw: &rwStub{
+			WriteHook: func(recvList keyValueList) {
+				//checking that ulc sends to peer allowedRequests=onlyAnnounceRequests and announceType = announceTypeSigned
+				recv := recvList.decode()
+				var a, reqType uint64
+				err := recv.get("allowedRequests", &a)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if a != noRequests {
+					t.Fatal("Expected noRequests")
+				}
+				err = recv.get("announceType", &reqType)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if reqType == announceTypeSigned {
+					t.Fatal("Expected not announceTypeSigned")
+				}
+			},
+		},
 		network: test_networkid,
 	}
 
 	s := generateLesServer()
+	s.ulc = newULC(&eth.ULCConfig{
+		TrustedNodes: []string{},
+	})
 
 	err := p.Handshake(td, hash, headNum, genesis, s)
 	if err != nil {
@@ -86,7 +140,8 @@ func generateLesServer() *LesServer {
 }
 
 type rwStub struct {
-	WriteAssert func(m p2p.Msg)
+	ReadHook  func(l keyValueList) keyValueList
+	WriteHook func(l keyValueList)
 }
 
 func (s *rwStub) ReadMsg() (p2p.Msg, error) {
@@ -105,6 +160,10 @@ func (s *rwStub) ReadMsg() (p2p.Msg, error) {
 	payload = payload.add("flowControl/BL", uint64(300000000))
 	payload = payload.add("flowControl/MRR", uint64(50000))
 
+	if s.ReadHook != nil {
+		payload = s.ReadHook(payload)
+	}
+
 	size, p, err := rlp.EncodeToReader(payload)
 	if err != nil {
 		return p2p.Msg{}, err
@@ -115,16 +174,16 @@ func (s *rwStub) ReadMsg() (p2p.Msg, error) {
 		Payload: p,
 	}, nil
 }
+
 func (s *rwStub) WriteMsg(m p2p.Msg) error {
 	recvList := keyValueList{}
 	if err := m.Decode(&recvList); err != nil {
 		return err
 	}
 
-	recv := recvList.decode()
-	fmt.Println("WriteMsg: ", recv)
-	for k, v := range recv {
-		fmt.Println(k, v)
+	if s.WriteHook != nil {
+		s.WriteHook(recvList)
 	}
+
 	return nil
 }
