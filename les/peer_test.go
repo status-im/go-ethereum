@@ -84,7 +84,7 @@ func TestPeer_Handshake_AnnounceTypeSigned_ForTrustedPeers_PeerNotInTrusted_Fail
 		version: protocol_version,
 		rw: &rwStub{
 			WriteHook: func(recvList keyValueList) {
-				//checking that ulc sends to peer allowedRequests=onlyAnnounceRequests and announceType = announceTypeSigned
+				//checking that ulc sends to peer allowedRequests=noRequests and announceType != announceTypeSigned
 				recv := recvList.decode()
 				var a, reqType uint64
 				err := recv.get("allowedRequests", &a)
