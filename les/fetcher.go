@@ -483,6 +483,9 @@ func (f *lightFetcher) checkTrusted(hash common.Hash, minTrustedFraction int) bo
 		numAgreed = numAgreed + 1
 	}
 
+	return checkTrustedFractionBarrier(numAgreed, numPeers, minTrustedFraction)
+}
+func checkTrustedFractionBarrier(numAgreed, numPeers, minTrustedFraction int) bool {
 	return 100*numAgreed/numPeers > minTrustedFraction
 }
 
