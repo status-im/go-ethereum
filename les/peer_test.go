@@ -3,7 +3,6 @@ package les
 import (
 	"crypto/rand"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/les/flowcontrol"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
@@ -24,22 +23,16 @@ var (
 	td      = big.NewInt(123)
 )
 
-//ulc connects to trusted peer and mark it
-func TestPeer_Handshake_AnnounceTypeSignedAndOnlyAnnounceRequests_ForTrustedPeers_PeerInTrusted_Success(t *testing.T) {
+//ulc connects to trusted peer and send announceType=announceTypeSigned
+func TestPeerHandshakeSetAnnounceTypeToAnnounceTypeSignedForTrustedPeer(t *testing.T) {
 	var id discover.NodeID
 	rand.Read(id[:])
 
-	//current ulc server
-	s := generateLesServer()
-	s.ulc = newULC(&eth.ULCConfig{
-		TrustedNodes: []string{id.String()},
-	})
-	s.ulc.trusted[id.String()] = struct{}{}
-
 	//peer to connect(on ulc side)
 	p := peer{
-		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
-		version: protocol_version,
+		Peer:      p2p.NewPeer(id, "test peer", []p2p.Cap{}),
+		version:   protocol_version,
+		isTrusted: true,
 		rw: &rwStub{
 			WriteHook: func(recvList keyValueList) {
 				//checking that ulc sends to peer allowedRequests=onlyAnnounceRequests and announceType = announceTypeSigned
@@ -61,11 +54,22 @@ func TestPeer_Handshake_AnnounceTypeSignedAndOnlyAnnounceRequests_ForTrustedPeer
 					t.Fatal("Expected announceTypeSigned")
 				}
 			},
+			ReadHook: func(l keyValueList) keyValueList {
+				l = l.add("serveHeaders", nil)
+				l = l.add("serveChainSince", uint64(0))
+				l = l.add("serveStateSince", uint64(0))
+				l = l.add("txRelay", nil)
+				l = l.add("flowControl/BL", uint64(0))
+				l = l.add("flowControl/MRR", uint64(0))
+				l = l.add("flowControl/MRC", RequestCostList{})
+
+				return l
+			},
 		},
 		network: test_networkid,
 	}
 
-	err := p.Handshake(td, hash, headNum, genesis, s)
+	err := p.Handshake(td, hash, headNum, genesis, nil)
 	if err != nil {
 		t.Fatalf("Handshake error: %s", err)
 	}
@@ -75,10 +79,9 @@ func TestPeer_Handshake_AnnounceTypeSignedAndOnlyAnnounceRequests_ForTrustedPeer
 	}
 }
 
-func TestPeer_Handshake_AnnounceTypeSigned_ForTrustedPeers_PeerNotInTrusted_Fail(t *testing.T) {
+func TestPeerHandshakeAnnounceTypeSignedForTrustedPeersPeerNotInTrusted(t *testing.T) {
 	var id discover.NodeID
 	rand.Read(id[:])
-
 	p := peer{
 		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
 		version: protocol_version,
@@ -86,16 +89,9 @@ func TestPeer_Handshake_AnnounceTypeSigned_ForTrustedPeers_PeerNotInTrusted_Fail
 			WriteHook: func(recvList keyValueList) {
 				//checking that ulc sends to peer allowedRequests=noRequests and announceType != announceTypeSigned
 				recv := recvList.decode()
-				var a, reqType uint64
-				err := recv.get("allowedRequests", &a)
-				if err != nil {
-					t.Fatal(err)
-				}
+				var reqType uint64
 
-				if a != noRequests {
-					t.Fatal("Expected noRequests")
-				}
-				err = recv.get("announceType", &reqType)
+				err := recv.get("announceType", &reqType)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -104,20 +100,55 @@ func TestPeer_Handshake_AnnounceTypeSigned_ForTrustedPeers_PeerNotInTrusted_Fail
 					t.Fatal("Expected not announceTypeSigned")
 				}
 			},
+			ReadHook: func(l keyValueList) keyValueList {
+				l = l.add("serveHeaders", nil)
+				l = l.add("serveChainSince", uint64(0))
+				l = l.add("serveStateSince", uint64(0))
+				l = l.add("txRelay", nil)
+				l = l.add("flowControl/BL", uint64(0))
+				l = l.add("flowControl/MRR", uint64(0))
+				l = l.add("flowControl/MRC", RequestCostList{})
+
+				return l
+			},
 		},
 		network: test_networkid,
 	}
 
+	err := p.Handshake(td, hash, headNum, genesis, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.announceType == announceTypeSigned {
+		t.Fatal("Incorrect announceType")
+	}
+}
+
+func TestPeerHandshakeDefaultAllRequests(t *testing.T) {
+	var id discover.NodeID
+	rand.Read(id[:])
+
 	s := generateLesServer()
-	s.ulc = newULC(&eth.ULCConfig{
-		TrustedNodes: []string{},
-	})
+
+	p := peer{
+		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
+		version: protocol_version,
+		rw: &rwStub{
+			ReadHook: func(l keyValueList) keyValueList {
+				l = l.add("announceType", uint64(announceTypeSigned))
+				l = l.add("allowedRequests", uint64(0))
+
+				return l
+			},
+		},
+		network: test_networkid,
+	}
 
 	err := p.Handshake(td, hash, headNum, genesis, s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.announceType == announceTypeSigned {
+	if p.allowedRequests != allRequests {
 		t.Fatal("Incorrect announceType")
 	}
 }
@@ -152,13 +183,6 @@ func (s *rwStub) ReadMsg() (p2p.Msg, error) {
 	payload = payload.add("headHash", hash)
 	payload = payload.add("headNum", headNum)
 	payload = payload.add("genesisHash", genesis)
-
-	payload = payload.add("serveHeaders", nil)
-	payload = payload.add("serveChainSince", uint64(0))
-	payload = payload.add("serveStateSince", uint64(0))
-	payload = payload.add("txRelay", nil)
-	payload = payload.add("flowControl/BL", uint64(300000000))
-	payload = payload.add("flowControl/MRR", uint64(50000))
 
 	if s.ReadHook != nil {
 		payload = s.ReadHook(payload)

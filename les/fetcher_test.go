@@ -1,13 +1,28 @@
 package les
 
 import (
+	"crypto/rand"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/discover"
 	"math/big"
 	"testing"
 )
 
-func TestFetcher_ULC_Peer_Selector(t *testing.T) {
+func TestFetcherULCPeerSelector(t *testing.T) {
+
+	var (
+		id1 discover.NodeID
+		id2 discover.NodeID
+		id3 discover.NodeID
+		id4 discover.NodeID
+	)
+	rand.Read(id1[:])
+	rand.Read(id2[:])
+	rand.Read(id3[:])
+	rand.Read(id4[:])
+
 	ftn1 := &fetcherTreeNode{
 		hash: common.StringToHash("1"),
 		td:   big.NewInt(1),
@@ -24,22 +39,22 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 	}
 	lf := lightFetcher{
 		pm: &ProtocolManager{
-			server: &LesServer{
-				ulc: &ulc{
-					trusted: map[string]struct{}{
-						"peer1": {},
-						"peer2": {},
-						"peer3": {},
-						"peer4": {},
-					},
-					minTrustedFraction: 70,
+			ulc: &ulc{
+				trustedKeys: map[string]struct{}{
+					id1.String(): {},
+					id2.String(): {},
+					id3.String(): {},
+					id4.String(): {},
 				},
+				minTrustedFraction: 70,
 			},
 		},
 		maxConfirmedTd: ftn1.td,
+
 		peers: map[*peer]*fetcherPeerInfo{
 			{
-				id: "peer1",
+				id:   "peer1",
+				Peer: p2p.NewPeer(id1, "peer1", []p2p.Cap{}),
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
 					ftn1.hash: ftn1,
@@ -47,7 +62,8 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 				},
 			},
 			{
-				id: "peer2",
+				Peer: p2p.NewPeer(id2, "peer2", []p2p.Cap{}),
+				id:   "peer2",
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
 					ftn1.hash: ftn1,
@@ -55,7 +71,8 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 				},
 			},
 			{
-				id: "peer3",
+				id:   "peer3",
+				Peer: p2p.NewPeer(id3, "peer3", []p2p.Cap{}),
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
 					ftn1.hash: ftn1,
@@ -64,7 +81,8 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 				},
 			},
 			{
-				id: "peer4",
+				id:   "peer4",
+				Peer: p2p.NewPeer(id4, "peer4", []p2p.Cap{}),
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
 					ftn1.hash: ftn1,
@@ -80,11 +98,12 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 			},
 		},
 	}
-	bestHash, bestAmount, bestTD, sync := lf.itFindBestValuesForULC()
+	bestHash, bestAmount, bestTD, sync := lf.findBestValuesForULC()
 
 	if bestTD == nil {
 		t.Fatal("Empty result")
 	}
+
 	if bestTD.Cmp(ftn2.td) != 0 {
 		t.Fatal("bad td", bestTD)
 	}
@@ -95,20 +114,18 @@ func TestFetcher_ULC_Peer_Selector(t *testing.T) {
 	_, _ = bestAmount, sync
 }
 
-func TestFetcher_ProcessResponse_DisablePowValidation_Success(t *testing.T) {
+func TestFetcherProcessResponseDisablePowValidation(t *testing.T) {
 	header := &types.Header{Number: big.NewInt(1)}
 	lf := lightFetcher{
 		pm: &ProtocolManager{
-			server: &LesServer{
-				ulc: &ulc{
-					trusted: map[string]struct{}{
-						"peer1": {},
-						"peer2": {},
-						"peer3": {},
-						"peer4": {},
-					},
-					minTrustedFraction: 70,
+			ulc: &ulc{
+				trustedKeys: map[string]struct{}{
+					"peer1": {},
+					"peer2": {},
+					"peer3": {},
+					"peer4": {},
 				},
+				minTrustedFraction: 70,
 			},
 		},
 		chain: &lightChainStub{
@@ -129,14 +146,12 @@ func TestFetcher_ProcessResponse_DisablePowValidation_Success(t *testing.T) {
 	lf.processResponse(fetchRequest{amount: 1, hash: header.Hash()}, fetchResponse{headers: []*types.Header{header}})
 }
 
-func TestFetcher_ProcessResponse_DisablePowValidation_Fail(t *testing.T) {
+func TestFetcherProcessResponseDisablePowValidationFail(t *testing.T) {
 	header := &types.Header{Number: big.NewInt(1)}
 	lf := lightFetcher{
 		pm: &ProtocolManager{
-			server: &LesServer{
-				ulc: &ulc{
-					trusted: map[string]struct{}{},
-				},
+			ulc: &ulc{
+				trustedKeys: map[string]struct{}{},
 			},
 		},
 		chain: &lightChainStub{

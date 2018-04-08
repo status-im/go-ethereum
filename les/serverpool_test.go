@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestLoadNodes_LoadTrustedNodes_Success(t *testing.T) {
+func TestLoadTrustedNodes(t *testing.T) {
 	node := discover.Node{
 		ID: discover.NodeID{},
 	}
