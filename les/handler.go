@@ -123,12 +123,28 @@ type ProtocolManager struct {
 
 	// wait group is used for graceful shutdowns during downloading
 	// and processing
-	wg *sync.WaitGroup
+	wg  *sync.WaitGroup
+	ulc *ulc
 }
 
 // NewProtocolManager returns a new ethereum sub protocol manager. The Ethereum sub protocol manages peers capable
 // with the ethereum network.
-func NewProtocolManager(chainConfig *params.ChainConfig, lightSync bool, protocolVersions []uint, networkId uint64, mux *event.TypeMux, engine consensus.Engine, peers *peerSet, blockchain BlockChain, txpool txPool, chainDb ethdb.Database, odr *LesOdr, txrelay *LesTxRelay, quitSync chan struct{}, wg *sync.WaitGroup, ulcConfig *eth.ULCConfig) (*ProtocolManager, error) {
+func NewProtocolManager(
+	chainConfig *params.ChainConfig,
+	lightSync bool,
+	protocolVersions []uint,
+	networkId uint64,
+	mux *event.TypeMux,
+	engine consensus.Engine,
+	peers *peerSet,
+	blockchain BlockChain,
+	txpool txPool,
+	chainDb ethdb.Database,
+	odr *LesOdr,
+	txrelay *LesTxRelay,
+	quitSync chan struct{},
+	wg *sync.WaitGroup,
+	ulcConfig *eth.ULCConfig) (*ProtocolManager, error) {
 	// Create the protocol manager with the base fields
 	manager := &ProtocolManager{
 		lightSync:   lightSync,
@@ -152,7 +168,7 @@ func NewProtocolManager(chainConfig *params.ChainConfig, lightSync bool, protoco
 	}
 
 	if ulcConfig != nil {
-		manager.server = &LesServer{ulc: newULC(ulcConfig)}
+		manager.ulc = newULC(ulcConfig)
 	}
 
 	// Initiate a sub-protocol for every implemented version we can handle
@@ -259,7 +275,11 @@ func (pm *ProtocolManager) Stop() {
 }
 
 func (pm *ProtocolManager) newPeer(pv int, nv uint64, p *p2p.Peer, rw p2p.MsgReadWriter) *peer {
-	return newPeer(pv, nv, p, newMeteredMsgWriter(rw))
+	var isTrusted bool
+	if pm.ulc != nil {
+		isTrusted = pm.ulc.isTrusted(p.ID())
+	}
+	return newPeer(pv, nv, isTrusted, p, newMeteredMsgWriter(rw))
 }
 
 // handle is the callback invoked to manage the life cycle of a les peer. When
@@ -284,9 +304,11 @@ func (pm *ProtocolManager) handle(p *peer) error {
 		p.Log().Debug("Light Ethereum handshake failed", "err", err)
 		return err
 	}
+
 	if rw, ok := p.rw.(*meteredMsgReadWriter); ok {
 		rw.Init(p.version)
 	}
+
 	// Register the peer locally
 	if err := pm.peers.Register(p); err != nil {
 		p.Log().Error("Light Ethereum peer registration failed", "err", err)
@@ -298,6 +320,7 @@ func (pm *ProtocolManager) handle(p *peer) error {
 		}
 		pm.removePeer(p.id)
 	}()
+
 	// Register the peer in the downloader. If the downloader considers it banned, we disconnect
 	if pm.lightSync {
 		p.lock.Lock()

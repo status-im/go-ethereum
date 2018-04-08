@@ -45,14 +45,28 @@ type LesServer struct {
 	lesTopics       []discv5.Topic
 	privateKey      *ecdsa.PrivateKey
 	quitSync        chan struct{}
-	ulc             *ulc
 
 	chtIndexer, bloomTrieIndexer *core.ChainIndexer
 }
 
 func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 	quitSync := make(chan struct{})
-	pm, err := NewProtocolManager(eth.BlockChain().Config(), false, ServerProtocolVersions, config.NetworkId, eth.EventMux(), eth.Engine(), newPeerSet(), eth.BlockChain(), eth.TxPool(), eth.ChainDb(), nil, nil, quitSync, new(sync.WaitGroup), config.ULC)
+	pm, err := NewProtocolManager(
+		eth.BlockChain().Config(),
+		false,
+		ServerProtocolVersions,
+		config.NetworkId,
+		eth.EventMux(),
+		eth.Engine(),
+		newPeerSet(),
+		eth.BlockChain(),
+		eth.TxPool(),
+		eth.ChainDb(),
+		nil,
+		nil,
+		quitSync,
+		new(sync.WaitGroup),
+		config.ULC)
 	if err != nil {
 		return nil, err
 	}
@@ -69,9 +83,6 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 		lesTopics:        lesTopics,
 		chtIndexer:       light.NewChtIndexer(eth.ChainDb(), false),
 		bloomTrieIndexer: light.NewBloomTrieIndexer(eth.ChainDb(), false),
-	}
-	if config.ULC != nil {
-		srv.ulc = newULC(config.ULC)
 	}
 
 	logger := log.New()
@@ -105,24 +116,6 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 	srv.fcManager = flowcontrol.NewClientManager(uint64(config.LightServ), 10, 1000000000)
 	srv.fcCostStats = newCostStats(eth.ChainDb())
 	return srv, nil
-}
-
-type ulc struct {
-	trusted            map[string]struct{}
-	minTrustedFraction int
-}
-
-func newULC(ulcConfig *eth.ULCConfig) *ulc {
-	if ulcConfig == nil {
-		return nil
-	}
-
-	m := make(map[string]struct{}, len(ulcConfig.TrustedNodes))
-	for _, id := range ulcConfig.TrustedNodes {
-		m[id] = struct{}{}
-	}
-
-	return &ulc{m, ulcConfig.MinTrustedFraction}
 }
 
 func (s *LesServer) Protocols() []p2p.Protocol {

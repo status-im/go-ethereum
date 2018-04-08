@@ -133,6 +133,7 @@ func newServerPool(db ethdb.Database, quit chan struct{}, wg *sync.WaitGroup) *s
 		newSelect:    newWeightedRandomSelect(),
 		fastDiscover: true,
 	}
+
 	pool.trustedQueue = newPoolEntryQueue(maxKnownEntries, nil)
 	pool.knownQueue = newPoolEntryQueue(maxKnownEntries, pool.removeEntry)
 	pool.newQueue = newPoolEntryQueue(maxNewEntries, pool.removeEntry)
