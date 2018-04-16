@@ -17,8 +17,8 @@ const (
 )
 
 var (
-	hash    = common.StringToHash("some string")
-	genesis = common.StringToHash("genesis hash")
+	hash    = common.HexToHash("some string")
+	genesis = common.HexToHash("genesis hash")
 	headNum = uint64(1234)
 	td      = big.NewInt(123)
 )

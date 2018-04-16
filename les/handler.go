@@ -226,6 +226,9 @@ func NewProtocolManager(
 
 	if lightSync {
 		manager.downloader = downloader.New(downloader.LightSync, chainDb, manager.eventMux, nil, blockchain, removePeer)
+		if manager.ulc != nil && len(manager.ulc.trustedKeys) > 0 {
+			manager.downloader.IsTrustedPeer = manager.ulc.isTrusted
+		}
 		manager.peers.notify((*downloaderPeerNotify)(manager))
 		manager.fetcher = newLightFetcher(manager)
 	}
@@ -1274,14 +1277,18 @@ func (pc *peerConnection) RequestHeadersByNumber(origin uint64, amount int, skip
 
 func (d *downloaderPeerNotify) registerPeer(p *peer) {
 	pm := (*ProtocolManager)(d)
-	pc := &peerConnection{
-		manager: pm,
-		peer:    p,
+	if pm.ulc == nil || p.isTrusted {
+		pc := &peerConnection{
+			manager: pm,
+			peer:    p,
+		}
+		pm.downloader.RegisterLightPeer(p.id, ethVersion, pc)
 	}
-	pm.downloader.RegisterLightPeer(p.id, ethVersion, pc)
 }
 
 func (d *downloaderPeerNotify) unregisterPeer(p *peer) {
 	pm := (*ProtocolManager)(d)
-	pm.downloader.UnregisterPeer(p.id)
+	if pm.ulc == nil || p.isTrusted {
+		pm.downloader.UnregisterPeer(p.id)
+	}
 }

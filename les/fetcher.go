@@ -595,6 +595,7 @@ func (f *lightFetcher) processResponse(req fetchRequest, resp fetchResponse) boo
 	if f.pm.ulc != nil && len(f.pm.ulc.trustedKeys) > 0 {
 		checkFreq = 0
 	}
+
 	if _, err := f.chain.InsertHeaderChain(headers, checkFreq); err != nil {
 		if err == consensus.ErrFutureBlock {
 			return true

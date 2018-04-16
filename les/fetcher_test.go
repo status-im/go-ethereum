@@ -24,16 +24,16 @@ func TestFetcherULCPeerSelector(t *testing.T) {
 	rand.Read(id4[:])
 
 	ftn1 := &fetcherTreeNode{
-		hash: common.StringToHash("1"),
+		hash: common.HexToHash("1"),
 		td:   big.NewInt(1),
 	}
 	ftn2 := &fetcherTreeNode{
-		hash:   common.StringToHash("2"),
+		hash:   common.HexToHash("2"),
 		td:     big.NewInt(2),
 		parent: ftn1,
 	}
 	ftn3 := &fetcherTreeNode{
-		hash:   common.StringToHash("3"),
+		hash:   common.HexToHash("3"),
 		td:     big.NewInt(3),
 		parent: ftn2,
 	}
