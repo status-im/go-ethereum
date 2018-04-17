@@ -20,11 +20,11 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		Genesis                 *core.Genesis `toml:",omitempty"`
 		NetworkId               uint64
 		SyncMode                downloader.SyncMode
-		LightServ               int  `toml:",omitempty"`
-		LightPeers              int  `toml:",omitempty"`
+		LightServ               int        `toml:",omitempty"`
+		LightPeers              int        `toml:",omitempty"`
 		ULC                     *ULCConfig `toml:",omitempty"`
-		SkipBcVersionCheck      bool `toml:"-"`
-		DatabaseHandles         int  `toml:"-"`
+		SkipBcVersionCheck      bool       `toml:"-"`
+		DatabaseHandles         int        `toml:"-"`
 		DatabaseCache           int
 		Etherbase               common.Address `toml:",omitempty"`
 		MinerThreads            int            `toml:",omitempty"`
@@ -63,11 +63,11 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		Genesis                 *core.Genesis `toml:",omitempty"`
 		NetworkId               *uint64
 		SyncMode                *downloader.SyncMode
-		LightServ               *int  `toml:",omitempty"`
-		LightPeers              *int  `toml:",omitempty"`
+		LightServ               *int       `toml:",omitempty"`
+		LightPeers              *int       `toml:",omitempty"`
 		ULC                     *ULCConfig `toml:",omitempty"`
-		SkipBcVersionCheck      *bool `toml:"-"`
-		DatabaseHandles         *int  `toml:"-"`
+		SkipBcVersionCheck      *bool      `toml:"-"`
+		DatabaseHandles         *int       `toml:"-"`
 		DatabaseCache           *int
 		Etherbase               *common.Address `toml:",omitempty"`
 		MinerThreads            *int            `toml:",omitempty"`

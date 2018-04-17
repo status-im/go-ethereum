@@ -244,7 +244,7 @@ func (pool *serverPool) disconnect(entry *poolEntry) {
 }
 
 const (
-	pseBlockDelay      = iota
+	pseBlockDelay = iota
 	pseResponseTime
 	pseResponseTimeout
 )
