@@ -1226,10 +1226,6 @@ func (pc *peerConnection) RequestHeadersByHash(origin common.Hash, amount int, s
 			return peer.GetRequestCost(GetBlockHeadersMsg, amount)
 		},
 		canSend: func(dp distPeer) bool {
-			if dp.(*peer).allowedRequests != allRequests {
-				return false
-			}
-
 			return dp.(*peer) == pc.peer
 		},
 		request: func(dp distPeer) func() {
@@ -1255,10 +1251,6 @@ func (pc *peerConnection) RequestHeadersByNumber(origin uint64, amount int, skip
 		},
 		canSend: func(dp distPeer) bool {
 			p := dp.(*peer)
-			if p.allowedRequests != allRequests {
-				return false
-			}
-
 			return p == pc.peer
 		},
 		request: func(dp distPeer) func() {

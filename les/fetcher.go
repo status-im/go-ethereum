@@ -505,7 +505,7 @@ func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
 		},
 		canSend: func(dp distPeer) bool {
 			p := dp.(*peer)
-			if p.allowedRequests != allRequests {
+			if p.isOnlyAnnounce {
 				return false
 			}
 			f.lock.Lock()
@@ -535,7 +535,7 @@ func (f *lightFetcher) newFetcherDistReq(bestHash common.Hash, reqID uint64, bes
 		},
 		canSend: func(dp distPeer) bool {
 			p := dp.(*peer)
-			if p.allowedRequests != allRequests {
+			if p.isOnlyAnnounce {
 				return false
 			}
 

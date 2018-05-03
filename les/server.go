@@ -45,6 +45,7 @@ type LesServer struct {
 	lesTopics       []discv5.Topic
 	privateKey      *ecdsa.PrivateKey
 	quitSync        chan struct{}
+	onlyAnnounse    bool
 
 	chtIndexer, bloomTrieIndexer *core.ChainIndexer
 }

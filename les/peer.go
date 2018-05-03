@@ -49,12 +49,6 @@ const (
 	announceTypeSigned
 )
 
-const (
-	allRequests = iota
-	onlyAnnounceRequests
-	noRequests
-)
-
 type peer struct {
 	*p2p.Peer
 	pubKey *ecdsa.PublicKey
@@ -83,8 +77,8 @@ type peer struct {
 	fcServerParams *flowcontrol.ServerParams
 	fcCosts        requestCostTable
 
-	isTrusted       bool
-	allowedRequests uint64
+	isTrusted      bool
+	isOnlyAnnounce bool
 }
 
 func newPeer(version int, network uint64, isTrusted bool, p *p2p.Peer, rw p2p.MsgReadWriter) *peer {
@@ -415,10 +409,13 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 	send = send.add("headNum", headNum)
 	send = send.add("genesisHash", genesis)
 	if server != nil {
-		send = send.add("serveHeaders", nil)
-		send = send.add("serveChainSince", uint64(0))
-		send = send.add("serveStateSince", uint64(0))
-		send = send.add("txRelay", nil)
+		if !server.onlyAnnounse {
+			//only announce server. It sends only announse requests
+			send = send.add("serveHeaders", nil)
+			send = send.add("serveChainSince", uint64(0))
+			send = send.add("serveStateSince", uint64(0))
+			send = send.add("txRelay", nil)
+		}
 		send = send.add("flowControl/BL", server.defParams.BufLimit)
 		send = send.add("flowControl/MRR", server.defParams.MinRecharge)
 		list := server.fcCostStats.getCurrentList()
@@ -428,7 +425,6 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 		//on client node
 		p.announceType = announceTypeSimple
 		if p.isTrusted {
-			send = send.add("allowedRequests", uint64(onlyAnnounceRequests))
 			p.announceType = uint64(announceTypeSigned)
 		}
 		send = send.add("announceType", p.announceType)
@@ -484,20 +480,16 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 			p.announceType = announceTypeSimple
 		}
 		p.fcClient = flowcontrol.NewClientNode(server.fcManager, server.defParams)
-
-		//which requests could receive the peer
-		if recv.get("allowedRequests", &p.allowedRequests) != nil {
-			p.allowedRequests = allRequests
-		}
 	} else {
+		//mark OnlyAnnounce server if "serveHeaders", "serveChainSince", "serveStateSince" or "txRelay" fields don't exist
 		if recv.get("serveChainSince", nil) != nil {
-			return errResp(ErrUselessPeer, "peer cannot serve chain")
+			p.isOnlyAnnounce = true
 		}
 		if recv.get("serveStateSince", nil) != nil {
-			return errResp(ErrUselessPeer, "peer cannot serve state")
+			p.isOnlyAnnounce = true
 		}
 		if recv.get("txRelay", nil) != nil {
-			return errResp(ErrUselessPeer, "peer cannot relay transactions")
+			p.isOnlyAnnounce = true
 		}
 		params := &flowcontrol.ServerParams{}
 		if err := recv.get("flowControl/BL", &params.BufLimit); err != nil {

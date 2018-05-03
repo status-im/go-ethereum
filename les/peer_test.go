@@ -37,15 +37,9 @@ func TestPeerHandshakeSetAnnounceTypeToAnnounceTypeSignedForTrustedPeer(t *testi
 			WriteHook: func(recvList keyValueList) {
 				//checking that ulc sends to peer allowedRequests=onlyAnnounceRequests and announceType = announceTypeSigned
 				recv := recvList.decode()
-				var a, reqType uint64
-				err := recv.get("allowedRequests", &a)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if a != onlyAnnounceRequests {
-					t.Fatal("Expected onlyAnnounceRequests")
-				}
-				err = recv.get("announceType", &reqType)
+				var reqType uint64
+
+				err := recv.get("announceType", &reqType)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -148,8 +142,78 @@ func TestPeerHandshakeDefaultAllRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.allowedRequests != allRequests {
+	if p.isOnlyAnnounce != false {
 		t.Fatal("Incorrect announceType")
+	}
+}
+
+func TestPeerHandshakeServerSendOnlyAnnounceRequestsHeaders(t *testing.T) {
+	var id discover.NodeID
+	rand.Read(id[:])
+
+	s := generateLesServer()
+	s.onlyAnnounse = true
+
+	p := peer{
+		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
+		version: protocol_version,
+		rw: &rwStub{
+			ReadHook: func(l keyValueList) keyValueList {
+				l = l.add("announceType", uint64(announceTypeSigned))
+
+				return l
+			},
+			WriteHook: func(l keyValueList) {
+				for _, v := range l {
+					if v.Key == "serveHeaders" ||
+						v.Key == "serveChainSince" ||
+						v.Key == "serveStateSince" ||
+						v.Key == "txRelay" {
+						t.Fatalf("%v exists", v.Key)
+					}
+				}
+			},
+		},
+		network: test_networkid,
+	}
+
+	err := p.Handshake(td, hash, headNum, genesis, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+func TestPeerHandshakeClientReceiveOnlyAnnounceRequestsHeaders(t *testing.T) {
+	var id discover.NodeID
+	rand.Read(id[:])
+
+	p := peer{
+		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
+		version: protocol_version,
+		rw: &rwStub{
+			ReadHook: func(l keyValueList) keyValueList {
+				//l = l.add("serveHeaders", nil)
+				//l = l.add("serveChainSince", uint64(0))
+				//l = l.add("serveStateSince", uint64(0))
+				//l = l.add("txRelay", nil)
+				l = l.add("flowControl/BL", uint64(0))
+				l = l.add("flowControl/MRR", uint64(0))
+				l = l.add("flowControl/MRC", RequestCostList{})
+
+				l = l.add("announceType", uint64(announceTypeSigned))
+
+				return l
+			},
+		},
+		network: test_networkid,
+	}
+
+	err := p.Handshake(td, hash, headNum, genesis, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if p.isOnlyAnnounce == false {
+		t.Fatal("isOnlyAnnounce must be true")
 	}
 }
 
