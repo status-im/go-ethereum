@@ -191,10 +191,6 @@ func TestPeerHandshakeClientReceiveOnlyAnnounceRequestsHeaders(t *testing.T) {
 		version: protocol_version,
 		rw: &rwStub{
 			ReadHook: func(l keyValueList) keyValueList {
-				//l = l.add("serveHeaders", nil)
-				//l = l.add("serveChainSince", uint64(0))
-				//l = l.add("serveStateSince", uint64(0))
-				//l = l.add("txRelay", nil)
 				l = l.add("flowControl/BL", uint64(0))
 				l = l.add("flowControl/MRR", uint64(0))
 				l = l.add("flowControl/MRC", RequestCostList{})

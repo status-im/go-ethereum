@@ -45,7 +45,7 @@ type LesServer struct {
 	lesTopics       []discv5.Topic
 	privateKey      *ecdsa.PrivateKey
 	quitSync        chan struct{}
-	onlyAnnounse    bool
+	onlyAnnounce    bool
 
 	chtIndexer, bloomTrieIndexer *core.ChainIndexer
 }
@@ -84,6 +84,7 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 		lesTopics:        lesTopics,
 		chtIndexer:       light.NewChtIndexer(eth.ChainDb(), false),
 		bloomTrieIndexer: light.NewBloomTrieIndexer(eth.ChainDb(), false),
+		onlyAnnounce:	  config.OnlyAnnounce,
 	}
 
 	logger := log.New()

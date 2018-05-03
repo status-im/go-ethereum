@@ -81,6 +81,7 @@ var (
 		utils.FastSyncFlag,
 		utils.LightModeFlag,
 		utils.ULCModeConfigFlag,
+		utils.OnlyAnnounceModeFlag,
 		utils.SyncModeFlag,
 		utils.GCModeFlag,
 		utils.LightServFlag,

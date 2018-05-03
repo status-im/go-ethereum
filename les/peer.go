@@ -409,7 +409,7 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 	send = send.add("headNum", headNum)
 	send = send.add("genesisHash", genesis)
 	if server != nil {
-		if !server.onlyAnnounse {
+		if !server.onlyAnnounce {
 			//only announce server. It sends only announse requests
 			send = send.add("serveHeaders", nil)
 			send = send.add("serveChainSince", uint64(0))
