@@ -491,6 +491,11 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 		if recv.get("txRelay", nil) != nil {
 			p.isOnlyAnnounce = true
 		}
+
+		if p.isOnlyAnnounce && !p.isTrusted {
+			return errResp(ErrUselessPeer, "peer cannot serve requests")
+		}
+
 		params := &flowcontrol.ServerParams{}
 		if err := recv.get("flowControl/BL", &params.BufLimit); err != nil {
 			return err
