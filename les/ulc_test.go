@@ -1,39 +1,145 @@
 package les
 
 import (
+	"crypto/rand"
+	"fmt"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/light"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/discover"
+	"reflect"
 	"testing"
 	"time"
 )
 
-func TestUlc(t *testing.T) {
-	testULC(t, 2)
+func TestULCSyncWithOnePeer(t *testing.T) {
+	f := newFullPeerPair(t, 1, 4, testChainGen)
+	ulcConfig := &eth.ULCConfig{
+		MinTrustedFraction: 100,
+		TrustedNodes:       []string{f.ID.String()},
+	}
+
+	l := newLightPeer(t, ulcConfig)
+
+	if reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
+		t.Fatal("blocks are equal")
+	}
+
+	fPeer, _, err := connectPeers(f, l, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.PM.synchronise(fPeer)
+
+	if !reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
+		t.Fatal("sync don't work")
+	}
 }
 
-func testULC(t *testing.T, protocol int) {
-	// Assemble the test environment
+func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
+	f1 := newFullPeerPair(t, 1, 4, testChainGen)
+	f2 := newFullPeerPair(t, 3, 0, nil)
+	ulcConf := &ulc{minTrustedFraction: 100, trustedKeys: make(map[string]struct{})}
+	ulcConf.trustedKeys[f1.ID.String()] = struct{}{}
+	ulcConf.trustedKeys[f2.ID.String()] = struct{}{}
+	ulcConfig := &eth.ULCConfig{
+		MinTrustedFraction: 100,
+		TrustedNodes:       []string{f1.ID.String(), f2.ID.String()},
+	}
+	l := newLightPeer(t, ulcConfig)
+	l.PM.ulc.minTrustedFraction = 100
+
+	fPeer1, lPeer1, err := connectPeers(f1, l, 2)
+	fPeer2, lPeer2, err := connectPeers(f2, l, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _ = lPeer1, lPeer2
+
+	l.PM.synchronise(fPeer1)
+	l.PM.synchronise(fPeer2)
+
+	time.Sleep(time.Second)
+	if l.PM.blockchain.CurrentHeader() != nil {
+		t.Fatal("Should be empty")
+	}
+}
+
+type pairPeer struct {
+	Name string
+	ID   discover.NodeID
+	PM   *ProtocolManager
+}
+
+func connectPeers(full, light pairPeer, version int) (*peer, *peer, error) {
+	// Create a message pipe to communicate through
+	app, net := p2p.MsgPipe()
+
+	peerLight := full.PM.newPeer(version, NetworkId, p2p.NewPeer(light.ID, light.Name, nil), net)
+	peerFull := light.PM.newPeer(version, NetworkId, p2p.NewPeer(full.ID, full.Name, nil), app)
+
+	// Start the peerLight on a new thread
+	errc1 := make(chan error, 1)
+	errc2 := make(chan error, 1)
+	go func() {
+		select {
+		case light.PM.newPeerCh <- peerFull:
+			errc1 <- light.PM.handle(peerFull)
+		case <-light.PM.quitSync:
+			errc1 <- p2p.DiscQuitting
+		}
+	}()
+	go func() {
+		select {
+		case full.PM.newPeerCh <- peerLight:
+			errc2 <- full.PM.handle(peerLight)
+		case <-full.PM.quitSync:
+			errc2 <- p2p.DiscQuitting
+		}
+	}()
+
+	select {
+	case <-time.After(time.Millisecond * 100):
+	case err := <-errc1:
+		return nil, nil, fmt.Errorf("peerLight handshake error: %v", err)
+	case err := <-errc2:
+		return nil, nil, fmt.Errorf("peerFull handshake error: %v", err)
+	}
+
+	return peerFull, peerLight, nil
+}
+
+func newFullPeerPair(t *testing.T, index int, numberOfblocks int, chainGen func(int, *core.BlockGen)) pairPeer {
+	db, _ := ethdb.NewMemDatabase()
+
+	pmFull := newTestProtocolManagerMust(t, false, numberOfblocks, chainGen, nil, nil, db, nil)
+
+	peerPairFull := pairPeer{
+		Name: "full node",
+		PM:   pmFull,
+	}
+	rand.Read(peerPairFull.ID[:])
+	return peerPairFull
+}
+
+func newLightPeer(t *testing.T, ulcConfig *eth.ULCConfig) pairPeer {
 	peers := newPeerSet()
 	dist := newRequestDistributor(peers, make(chan struct{}))
 	rm := newRetrieveManager(peers, dist, nil)
-
-	db, _ := ethdb.NewMemDatabase()
 	ldb, _ := ethdb.NewMemDatabase()
 
-	odr := NewLesOdr(ldb, light.NewChtIndexer(db, true), light.NewBloomTrieIndexer(db, true), eth.NewBloomIndexer(db, light.BloomTrieFrequency), rm)
+	odr := NewLesOdr(ldb, light.NewChtIndexer(ldb, true), light.NewBloomTrieIndexer(ldb, true), eth.NewBloomIndexer(ldb, light.BloomTrieFrequency), rm)
 
-	pm := newTestProtocolManagerMust(t, false, 4, testChainGen, nil, nil, db, nil)
-	lpm := newTestProtocolManagerMust(t, true, 0, nil, peers, odr, ldb, nil)
-
-	_, err1, lpeer, err2 := newTestPeerPair("peer", protocol, pm, lpm)
-	select {
-	case <-time.After(time.Millisecond * 100):
-	case err := <-err1:
-		t.Fatalf("peer 1 handshake error: %v", err)
-	case err := <-err2:
-		t.Fatalf("peer 1 handshake error: %v", err)
+	pmLight := newTestProtocolManagerMust(t, true, 0, nil, peers, odr, ldb, ulcConfig)
+	peerPairLight := pairPeer{
+		Name: "ulc node",
+		PM:   pmLight,
 	}
+	rand.Read(peerPairLight.ID[:])
 
-	lpm.synchronise(lpeer)
+	return peerPairLight
 }
