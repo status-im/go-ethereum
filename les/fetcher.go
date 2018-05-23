@@ -60,7 +60,7 @@ type lightFetcher struct {
 	requestChn chan bool // true if initiated from outside
 }
 
-//lightChain - light.LightChain interface
+// lightChain extends the BlockChain interface by locking.
 type lightChain interface {
 	BlockChain
 	LockChain()
@@ -410,7 +410,7 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 		bestSyncing bool
 	)
 	if f.pm == nil || f.pm.ulc == nil {
-		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForLes()
+		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForLES()
 	} else {
 		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForULC()
 	}
@@ -431,7 +431,8 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 	return rq, reqID
 }
 
-func (f *lightFetcher) findBestValuesForLes() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
+// findBestValuesForLES retrieves the best values for LES mode.
+func (f *lightFetcher) findBestValuesForLES() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
 	bestTd = f.maxConfirmedTd
 	bestSyncing = false
 
@@ -451,14 +452,15 @@ func (f *lightFetcher) findBestValuesForLes() (bestHash common.Hash, bestAmount 
 	return
 }
 
+// findBestValuesForULC retrieves the best values for ULC mode.
 func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
 	bestTd = f.maxConfirmedTd
 	bestSyncing = false
 
 	for p, fp := range f.peers {
 		for hash, n := range fp.nodeByHash {
-			if f.pm.ulc.isTrusted(p.ID()) == false {
-				log.Warn(fmt.Sprintf("f.pm.ulc.isTrusted(p.ID()) == false "))
+			if !f.pm.ulc.isTrusted(p.ID()) {
+				log.Warn(fmt.Sprintf("f.pm.ulc.isTrusted(p.ID()) == false "), "id", p.ID())
 				continue
 			}
 
@@ -467,7 +469,7 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 			}
 
 			amount := f.requestAmount(p, n)
-			if (bestTd == nil || n.td.Cmp(bestTd) > 0) && f.checkTrusted(hash, f.pm.ulc.minTrustedFraction) {
+			if (bestTd == nil || n.td.Cmp(bestTd) > 0) && f.isTrusted(hash, f.pm.ulc.minTrustedFraction) {
 				bestHash = hash
 				bestTd = n.td
 				bestAmount = amount
@@ -478,8 +480,8 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 	return
 }
 
-// checkTrusted - check num of agreed peer for hash.
-func (f *lightFetcher) checkTrusted(hash common.Hash, minTrustedFraction int) bool {
+// istTrusted checks if the node can be trusted by the minimum trusted fraction.
+func (f *lightFetcher) isTrusted(hash common.Hash, minTrustedFraction int) bool {
 	numPeers := len(f.peers)
 	var numAgreed int
 	for _, fp := range f.peers {
@@ -490,15 +492,9 @@ func (f *lightFetcher) checkTrusted(hash common.Hash, minTrustedFraction int) bo
 		numAgreed = numAgreed + 1
 	}
 
-	return checkTrustedFractionBarrier(numAgreed, numPeers, minTrustedFraction)
-}
-
-// checkTrustedFractionBarrier - checks is numAgreed/numPeers more minTrustedFraction.
-func checkTrustedFractionBarrier(numAgreed, numPeers, minTrustedFraction int) bool {
 	return 100*numAgreed/numPeers > minTrustedFraction
 }
 
-// newFetcherDistReqForSync creates distReq for sync
 func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
 	return &distReq{
 		getCost: func(dp distPeer) uint64 {
@@ -527,7 +523,7 @@ func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
 
 }
 
-// newFetcherDistReq creates distReq for
+// newFetcherDistReq creates a new request for the distributor.
 func (f *lightFetcher) newFetcherDistReq(bestHash common.Hash, reqID uint64, bestAmount uint64) *distReq {
 	return &distReq{
 		getCost: func(dp distPeer) uint64 {
