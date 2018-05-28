@@ -114,7 +114,7 @@ func connectPeers(full, light pairPeer, version int) (*peer, *peer, error) {
 }
 
 func newFullPeerPair(t *testing.T, index int, numberOfblocks int, chainGen func(int, *core.BlockGen)) pairPeer {
-	db, _ := ethdb.NewMemDatabase()
+	db := ethdb.NewMemDatabase()
 
 	pmFull := newTestProtocolManagerMust(t, false, numberOfblocks, chainGen, nil, nil, db, nil)
 
@@ -130,7 +130,7 @@ func newLightPeer(t *testing.T, ulcConfig *eth.ULCConfig) pairPeer {
 	peers := newPeerSet()
 	dist := newRequestDistributor(peers, make(chan struct{}))
 	rm := newRetrieveManager(peers, dist, nil)
-	ldb, _ := ethdb.NewMemDatabase()
+	ldb := ethdb.NewMemDatabase()
 
 	odr := NewLesOdr(ldb, light.NewChtIndexer(ldb, true), light.NewBloomTrieIndexer(ldb, true), eth.NewBloomIndexer(ldb, light.BloomTrieFrequency), rm)
 
