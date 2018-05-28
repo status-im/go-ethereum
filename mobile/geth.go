@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethstats"
+	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/les"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -73,6 +74,9 @@ type NodeConfig struct {
 	// WhisperEnabled specifies whether the node should run the Whisper protocol.
 	WhisperEnabled bool
 
+	// Listening address of pprof server.
+	PprofAddress string
+
 	// Ultra Light client options
 	ULC *eth.ULCConfig
 }
@@ -111,6 +115,10 @@ func NewNode(datadir string, config *NodeConfig) (stack *Node, _ error) {
 		config.BootstrapNodes = defaultNodeConfig.BootstrapNodes
 	}
 
+	if config.PprofAddress != "" {
+		debug.StartPProf(config.PprofAddress)
+	}
+
 	// Create the empty networking stack
 	nodeConf := &node.Config{
 		Name:        clientIdentifier,
@@ -136,6 +144,8 @@ func NewNode(datadir string, config *NodeConfig) (stack *Node, _ error) {
 	if err != nil {
 		return nil, err
 	}
+
+	debug.Memsize.Add("node", rawStack)
 
 	var genesis *core.Genesis
 	if config.EthereumGenesis != "" {
