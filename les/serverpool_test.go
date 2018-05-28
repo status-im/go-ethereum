@@ -1,13 +1,14 @@
 package les
 
 import (
+	"math/rand"
+	"sync"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/rlp"
-	"math/rand"
-	"sync"
-	"testing"
 )
 
 func TestLoadTrustedNodes(t *testing.T) {

@@ -3,15 +3,16 @@ package les
 import (
 	"crypto/rand"
 	"fmt"
+	"reflect"
+	"testing"
+	"time"
+
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
-	"reflect"
-	"testing"
-	"time"
 )
 
 func TestULCSyncWithOnePeer(t *testing.T) {

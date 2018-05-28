@@ -2,9 +2,10 @@ package eth
 
 import (
 	"crypto/rand"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
-	"testing"
 )
 
 func TestSetULC_Success(t *testing.T) {

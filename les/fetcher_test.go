@@ -2,12 +2,13 @@ package les
 
 import (
 	"crypto/rand"
+	"math/big"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
-	"math/big"
-	"testing"
 )
 
 func TestFetcherULCPeerSelector(t *testing.T) {
