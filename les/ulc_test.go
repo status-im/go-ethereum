@@ -37,7 +37,7 @@ func TestULCSyncWithOnePeer(t *testing.T) {
 	l.PM.synchronise(fPeer)
 
 	if !reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
-		t.Fatal("sync don't work")
+		t.Fatal("sync doesn't work")
 	}
 }
 
@@ -53,10 +53,6 @@ func TestULCReceiveAnnounce(t *testing.T) {
 	l := newLightPeer(t, ulcConfig)
 	l.ID = ID
 
-	if reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
-		t.Fatal("blocks are equal")
-	}
-
 	fPeer, lPeer, err := connectPeers(f, l, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -64,8 +60,9 @@ func TestULCReceiveAnnounce(t *testing.T) {
 
 	l.PM.synchronise(fPeer)
 
+	//check that the sync is finished correctly
 	if !reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
-		t.Fatal("sync don't work")
+		t.Fatal("sync doesn't work")
 	}
 
 	l.PM.peers.lock.Lock()

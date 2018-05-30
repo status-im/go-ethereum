@@ -425,7 +425,7 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 		//on client node
 		p.requestAnnounceType = announceTypeSimple
 		if p.isTrusted {
-			p.requestAnnounceType = uint64(announceTypeSigned)
+			p.requestAnnounceType = announceTypeSigned
 		}
 		send = send.add("announceType", p.requestAnnounceType)
 	}
