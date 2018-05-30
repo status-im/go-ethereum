@@ -40,6 +40,48 @@ func TestULCSyncWithOnePeer(t *testing.T) {
 	}
 }
 
+func TestULCSyncWithOnePeer1(t *testing.T) {
+	f := newFullPeerPair(t, 1, 4, testChainGen)
+	ulcConfig := &eth.ULCConfig{
+		MinTrustedFraction: 100,
+		TrustedNodes:       []string{f.ID.String()},
+	}
+
+	l := newLightPeer(t, ulcConfig)
+
+	if reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
+		t.Fatal("blocks are equal")
+	}
+
+	fPeer, lPeer, err := connectPeers(f, l, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.PM.synchronise(fPeer)
+
+	if !reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
+		t.Fatal("sync don't work")
+	}
+
+	l.PM.peers.lock.Lock()
+	fmt.Println(len(l.PM.peers.peers))
+	fmt.Println(l.PM.peers.peers)
+	if len(l.PM.peers.peers) == 0 {
+		t.Fatal("peer list should not be empty")
+	}
+	l.PM.peers.lock.Unlock()
+
+	//send an announce message(payload doesn't matter)
+	lPeer.SendAnnounce(announceData{})
+
+	l.PM.peers.lock.Lock()
+	if len(l.PM.peers.peers) == 0 {
+		t.Fatal("peer list after receiving message should not be empty")
+	}
+	l.PM.peers.lock.Unlock()
+}
+
 func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
 	f1 := newFullPeerPair(t, 1, 4, testChainGen)
 	f2 := newFullPeerPair(t, 3, 0, nil)
