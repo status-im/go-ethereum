@@ -10,23 +10,27 @@ main() {
     fail "missing p2psim binary (you need to build cmd/p2psim and put it in \$PATH)"
   fi
 
-  info "creating 10 nodes, first one is ULC"
-  for i in $(seq 1 10); do
-    p2psim node create --name "$(node_name $i)"
-    p2psim node start "$(node_name $i)"
+  info "creating 5 LES nodes"
+  for i in $(seq 1 5); do
+    p2psim node create --name "$(les_node_name $i)"
+    p2psim node start "$(les_node_name $i)"
   done
 
-  info "connecting node01 to all other nodes"
-  for i in $(seq 2 10); do
-    p2psim node connect "node01" "$(node_name $i)"
+  info "creating one ULC node"
+  p2psim node create --name "ulc"
+  p2psim node start "ulc"
+
+  info "connecting ULC node to all LES nodes"
+  for i in $(seq 1 5); do
+    p2psim node connect "ulc" "$(les_node_name $i)"
   done
 
   info "done"
 }
 
-node_name() {
+les_node_name() {
   local num=$1
-  echo "node$(printf '%02d' $num)"
+  echo "les$(printf '%02d' $num)"
 }
 
 info() {

@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/simulations"
 	"github.com/ethereum/go-ethereum/p2p/simulations/adapters"
 	"github.com/ethereum/go-ethereum/rpc"
 )
@@ -57,7 +58,8 @@ func (t *testNode) Stop() error {
 // newEthConfig generates the basic configuration for the test servers.
 func newEthConfig(ulc *eth.ULCConfig) *eth.Config {
 	cfg := eth.DefaultConfig
-	cfg.NetworkId = 4
+	cfg.NetworkId = 3
+	cfg.LightServ = 50
 	if ulc != nil {
 		cfg.ULC = ulc
 	}
@@ -83,10 +85,27 @@ func newLesServerService(ctx *adapters.ServiceContext, testMode string) (node.Se
 // newULCService creates a ULC client as node service.
 func newULCService(ctx *adapters.ServiceContext, testMode string) (node.Service, error) {
 	log.Info("new ULC service", "id", ctx.Config.Name)
+	// Retrieve infos about the LES server nodes.
+	infoLes01, err := simulations.DefaultClient.GetNode("les01")
+	if err != nil {
+		return nil, fmt.Errorf("cannot retrieve info of LES server service 01: %v", err)
+	}
+	infoLes02, err := simulations.DefaultClient.GetNode("les02")
+	if err != nil {
+		return nil, fmt.Errorf("cannot retrieve info of LES server service 02: %v", err)
+	}
+	infoLes03, err := simulations.DefaultClient.GetNode("les03")
+	if err != nil {
+		return nil, fmt.Errorf("cannot retrieve info of LES server service 03: %v", err)
+	}
+	// Create configuration and start ULC.
 	config := newEthConfig(&eth.ULCConfig{
 		MinTrustedFraction: 50,
-		TrustedNodes:       []string{"node02", "node03", "node04"},
-	})
+		TrustedNodes: []string{
+			infoLes01.ID,
+			infoLes02.ID,
+			infoLes03.ID,
+		}})
 	lightEthereum, err := les.New(ctx.NodeContext, config)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create ULC service: %v", err)

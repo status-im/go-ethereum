@@ -44,7 +44,7 @@ func main() {
 	// Create service map and register the services.
 	services := map[string]adapters.ServiceFunc{
 		"les": func(ctx *adapters.ServiceContext) (node.Service, error) {
-			if ctx.Config.Name == "node01" {
+			if ctx.Config.Name == "ulc" {
 				// Node 01 is always the ULC node.
 				return newULCService(ctx, *testMode)
 			}
