@@ -18,11 +18,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 
-	"github.com/ethereum/go-ethereum/eth"
-	"github.com/ethereum/go-ethereum/les"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p/simulations"
@@ -31,112 +31,61 @@ import (
 
 // Flogs of the ULC simulation.
 var (
-	testSim = flag.String("testsim", "trusted", `test simulation to run (one of "trusted", "announce" or "mixed")`)
+	testMode    = flag.String("test", "trusted", `test to run (one of "trusted", "announce", "mixed")`)
+	adapterType = flag.String("adapter", "sim", `node adapter to use (one of "sim", "exec" or "docker")`)
 )
 
-// main runs the test simulations based on the flags.
+// main runs the test simulation node based on the flags and the node ID.
 func main() {
+	// Flag and logging.
 	flag.Parse()
 	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StreamHandler(os.Stderr, log.TerminalFormat(false))))
 
-	var network *simulations.Network
-
-	switch *testSim {
-	case "trusted":
-		network = testTrustedServerNodes()
-	case "announce":
-		network = testTrustedAnnounceOnlyServerNodes()
-	case "mixed":
-		network = testMixedServerNodes()
-	default:
-		log.Crit("invalid test simulation", "testsim", *testSim)
-	}
-
-	log.Info("starting three trusted nodes simulation on 0.0.0.0:8888...")
-	if err := http.ListenAndServe(":8888", simulations.NewServer(network)); err != nil {
-		log.Crit("error starting simulation server", "err", err)
-	}
-}
-
-// ----------
-// TEST SIMULATIONS
-// ----------
-
-// testTrustedServerNodes tests syncing and receiving announces
-// from three trusted LES server nodes.
-func testTrustedServerNodes() *simulations.Network {
+	// Create service map and register the services.
 	services := map[string]adapters.ServiceFunc{
-		"full-one": func(ctx *adapters.ServiceContext) (node.Service, error) {
-			return newLesServerService(ctx.NodeContext, newEthConfig(nil)), nil
-		},
-		"full-two": func(ctx *adapters.ServiceContext) (node.Service, error) {
-			return newLesServerService(ctx.NodeContext, newEthConfig(nil)), nil
-		},
-		"full-three": func(ctx *adapters.ServiceContext) (node.Service, error) {
-			return newLesServerService(ctx.NodeContext, newEthConfig(nil)), nil
-		},
-		"ulc": func(ctx *adapters.ServiceContext) (node.Service, error) {
-			ulcConfig := &eth.ULCConfig{
-				MinTrustedFraction: 50,
-				TrustedNodes:       []string{"full-one", "full-two", "full-three"},
+		"les": func(ctx *adapters.ServiceContext) (node.Service, error) {
+			if ctx.Config.Name == "node01" {
+				// Node 01 is always the ULC node.
+				return newULCService(ctx, *testMode)
 			}
-			return newULCService(ctx.NodeContext, newEthConfig(ulcConfig)), nil
+			// LES server nodes.
+			return newLesServerService(ctx, *testMode)
 		},
 	}
 	adapters.RegisterServices(services)
-	adapter := adapters.NewSimAdapter(services)
 
-	return simulations.NewNetwork(adapter, &simulations.NetworkConfig{
-		DefaultService: "ulc",
+	// Create the NodeAdapter.
+	var adapter adapters.NodeAdapter
+
+	switch *adapterType {
+	case "sim":
+		log.Info("using sim adapter")
+		adapter = adapters.NewSimAdapter(services)
+	case "exec":
+		tmpdir, err := ioutil.TempDir("", "ulc-testing")
+		if err != nil {
+			log.Crit("error creating temp dir", "err", err)
+		}
+		defer os.RemoveAll(tmpdir)
+		log.Info("using exec adapter", "tmpdir", tmpdir)
+		adapter = adapters.NewExecAdapter(tmpdir)
+	case "docker":
+		log.Info("using docker adapter")
+		var err error
+		adapter, err = adapters.NewDockerAdapter()
+		if err != nil {
+			log.Crit("error creating docker adapter", "err", err)
+		}
+	default:
+		log.Crit(fmt.Sprintf("unknown node adapter %q", *adapterType))
+	}
+
+	// Start the HTTP API of the simulation server.
+	log.Info("starting simulation server on 0.0.0.0:8888...")
+	network := simulations.NewNetwork(adapter, &simulations.NetworkConfig{
+		DefaultService: "les",
 	})
-}
-
-// testTrustedAnnounceOnlyServerNodes tests syncing and receiving announces
-// from trusted LES server nodes. These only send announces.
-func testTrustedAnnounceOnlyServerNodes() *simulations.Network {
-	return nil
-}
-
-// testMixedServerNodes tests syncing and receiving announces in a network
-// of trusted and untrusted LES server nodes. Only trusted ones are
-// accepted.
-func testMixedServerNodes() *simulations.Network {
-	return nil
-}
-
-// ----------
-// HELPERS
-// ----------
-
-// newEthConfig generates the basic configuration for the test servers.
-func newEthConfig(ulc *eth.ULCConfig) *eth.Config {
-	cfg := eth.DefaultConfig
-	if ulc != nil {
-		cfg.ULC = ulc
+	if err := http.ListenAndServe(":8888", simulations.NewServer(network)); err != nil {
+		log.Crit("error starting simulation server", "err", err)
 	}
-	return &cfg
-}
-
-// newLesServerService creates a LES server as node service.
-func newLesServerService(ctx *node.ServiceContext, config *eth.Config) node.Service {
-	fullNode, err := eth.New(ctx, config)
-	if err != nil {
-		log.Crit("cannot create full node", "err", err)
-	}
-	lesServer, err := les.NewLesServer(fullNode, config)
-	if err != nil {
-		log.Crit("cannot create LES server service", "err", err)
-	}
-	fullNode.AddLesServer(lesServer)
-	return fullNode
-}
-
-// newULCService creates a ULC client as node service.
-func newULCService(ctx *node.ServiceContext, config *eth.Config) node.Service {
-	lightEthereum, err := les.New(ctx, config)
-	if err != nil {
-		log.Crit("cannot create ULC service", "err", err)
-	}
-	return lightEthereum
-
 }
