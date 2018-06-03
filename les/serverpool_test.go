@@ -19,7 +19,7 @@ func TestLoadTrustedNodes(t *testing.T) {
 
 	var wg sync.WaitGroup
 	q := make(chan struct{})
-	sp := newServerPool(&dbStub{}, q, &wg)
+	sp := newServerPool(&dbStub{}, q, &wg, []string{node.String()})
 	sp.server = &p2p.Server{}
 	sp.server.TrustedNodes = []*discover.Node{
 		&node,

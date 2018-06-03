@@ -166,13 +166,23 @@ var (
 		Usage: "Enable light client mode (replaced by --syncmode)",
 	}
 	ULCModeConfigFlag = cli.StringFlag{
-		Name:  "ulcconfig",
+		Name:  "les.ulcconfig",
 		Usage: "Config file to use for ULC mode",
 	}
 	OnlyAnnounceModeFlag = cli.BoolFlag{
-		Name:  "onlyannounce",
+		Name:  "les.onlyannounce",
 		Usage: "Les server sends only announce",
 	}
+	ULCMinTrustedFractionFlag = cli.IntFlag{
+		Name:  "les.mintrustedfraction",
+		Usage: "Les server sends only announce",
+		Value:eth.DefaultUTCMinTrustedFraction,
+	}
+	ULCTrustedNodesFlag = cli.StringFlag{
+		Name:  "les.trusted",
+		Usage: "Config file to use for ULC mode",
+	}
+
 	defaultSyncMode = eth.DefaultConfig.SyncMode
 	SyncModeFlag    = TextMarshalerFlag{
 		Name:  "syncmode",
@@ -737,24 +747,37 @@ func setIPC(ctx *cli.Context, cfg *node.Config) {
 	}
 }
 
-// SetULCFromFile setup ULC config from file if given.
-func SetULCFromFile(ctx *cli.Context, cfg *eth.Config, p2pCfg *p2p.Config) {
-	path := ctx.GlobalString(ULCModeConfigFlag.Name)
-	if path == "" {
+// SetULC setup ULC config from file if given.
+func SetULC(ctx *cli.Context, cfg *eth.Config) {
+	//ulc config haven't loaded from global config, ULC Config and ULC Trusted Nodes not defined
+	if cfg.ULC==nil && (ctx.GlobalIsSet(ULCModeConfigFlag.Name) || ctx.GlobalIsSet(ULCTrustedNodesFlag.Name)) == false  {
 		return
 	}
+	cfg.ULC=&eth.ULCConfig{}
 
-	cfgData, err := ioutil.ReadFile(path)
-	if err != nil {
-		Fatalf("Failed to read ULC config file: %v", err)
+	path := ctx.GlobalString(ULCModeConfigFlag.Name)
+	if path != "" {
+		cfgData, err := ioutil.ReadFile(path)
+		if err != nil {
+			Fatalf("Failed to read ULC config file: %v", err)
+		}
+
+		err = json.Unmarshal(cfgData, &cfg.ULC)
+		if err != nil {
+			Fatalf(err.Error())
+		}
 	}
 
-	err = json.Unmarshal(cfgData, &cfg.ULC)
-	if err != nil {
-		Fatalf(err.Error())
+	if trustedNodes:=ctx.GlobalString(ULCTrustedNodesFlag.Name); trustedNodes!="" {
+		cfg.ULC.ULCTrustedNodes=strings.Split(trustedNodes,";")
 	}
 
-	eth.SetULC(cfg.ULC, p2pCfg)
+	if trustedFraction:=ctx.GlobalInt(ULCMinTrustedFractionFlag.Name); trustedFraction>0 {
+		cfg.ULC.MinTrustedFraction=trustedFraction
+	}
+	if cfg.ULC.MinTrustedFraction<=0 && cfg.ULC.MinTrustedFraction> 100 {
+		cfg.ULC.MinTrustedFraction=eth.DefaultUTCMinTrustedFraction
+	}
 }
 
 // makeDatabaseHandles raises out the number of allowed file handles per process

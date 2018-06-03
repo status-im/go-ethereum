@@ -15,8 +15,8 @@ func newULC(ulcConfig *eth.ULCConfig) *ulc {
 		return nil
 	}
 
-	m := make(map[string]struct{}, len(ulcConfig.TrustedNodes))
-	for _, id := range ulcConfig.TrustedNodes {
+	m := make(map[string]struct{}, len(ulcConfig.ULCTrustedNodes))
+	for _, id := range ulcConfig.ULCTrustedNodes {
 		node, err := discover.ParseNode(id)
 		if err != nil {
 			continue
