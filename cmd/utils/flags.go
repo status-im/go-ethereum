@@ -751,7 +751,7 @@ func SetULCFromFile(ctx *cli.Context, cfg *eth.Config, p2pCfg *p2p.Config) {
 
 	err = json.Unmarshal(cfgData, &cfg.ULC)
 	if err != nil {
-		Fatalf(err.Error())
+		Fatalf("Failed to unmarshal ULC configuration: %v", err)
 	}
 
 	eth.SetULC(cfg.ULC, p2pCfg)
