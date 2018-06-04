@@ -135,11 +135,6 @@ func NewNode(datadir string, config *NodeConfig) (stack *Node, _ error) {
 		},
 	}
 
-	// setup ULC
-	if config.EthereumEnabled {
-		eth.SetULC(config.ULC, &nodeConf.P2P)
-	}
-
 	rawStack, err := node.New(nodeConf)
 	if err != nil {
 		return nil, err

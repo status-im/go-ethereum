@@ -104,6 +104,7 @@ type serverPool struct {
 	discNodes     chan *discv5.Node
 	discLookups   chan bool
 
+	trustedNodes         []string
 	entries              map[discover.NodeID]*poolEntry
 	lock                 sync.Mutex
 	timeout, enableRetry chan *poolEntry
@@ -116,7 +117,7 @@ type serverPool struct {
 }
 
 // newServerPool creates a new serverPool instance
-func newServerPool(db ethdb.Database, quit chan struct{}, wg *sync.WaitGroup) *serverPool {
+func newServerPool(db ethdb.Database, quit chan struct{}, wg *sync.WaitGroup, trustedNodes []string) *serverPool {
 	pool := &serverPool{
 		db:           db,
 		quit:         quit,
@@ -128,6 +129,7 @@ func newServerPool(db ethdb.Database, quit chan struct{}, wg *sync.WaitGroup) *s
 		knownSelect:  newWeightedRandomSelect(),
 		newSelect:    newWeightedRandomSelect(),
 		fastDiscover: true,
+		trustedNodes: trustedNodes,
 	}
 
 	pool.trustedQueue = newPoolEntryQueue(maxKnownEntries, nil)
@@ -401,7 +403,7 @@ func (pool *serverPool) loadNodes() {
 		pool.knownSelect.update((*knownEntry)(e))
 	}
 
-	for _, trusted := range pool.server.TrustedNodes {
+	for _, trusted := range pool.parseTrustedServers() {
 		e := pool.findOrNewNode(trusted.ID, trusted.IP, trusted.TCP)
 		e.trusted = true
 		e.dialed = &poolEntryAddress{ip: trusted.IP, port: trusted.TCP}
@@ -409,6 +411,21 @@ func (pool *serverPool) loadNodes() {
 		pool.trustedQueue.setLatest(e)
 	}
 
+}
+
+// parseTrustedServers returns valid and parsed by discovery enodes.
+func (pool *serverPool) parseTrustedServers() []*discover.Node {
+	nodes := make([]*discover.Node, 0, len(pool.trustedNodes))
+
+	for _, enode := range pool.trustedNodes {
+		node, err := discover.ParseNode(enode)
+		if err != nil {
+			log.Warn("Trusted node URL invalid", "enode", enode, "err", err)
+			continue
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes
 }
 
 // saveNodes saves known nodes and their statistics into the database. Nodes are
