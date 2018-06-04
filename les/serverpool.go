@@ -403,7 +403,7 @@ func (pool *serverPool) loadNodes() {
 		pool.knownSelect.update((*knownEntry)(e))
 	}
 
-	for _, trusted := range pool.parseULCTrustedNodes() {
+	for _, trusted := range pool.parseTrustedServers() {
 		e := pool.findOrNewNode(trusted.ID, trusted.IP, trusted.TCP)
 		e.trusted = true
 		e.dialed = &poolEntryAddress{ip: trusted.IP, port: trusted.TCP}
@@ -413,8 +413,8 @@ func (pool *serverPool) loadNodes() {
 
 }
 
-// parseULCTrustedNodes returns valid and parsed by discovery enodes.
-func (pool *serverPool) parseULCTrustedNodes() []*discover.Node {
+// parseTrustedServers returns valid and parsed by discovery enodes.
+func (pool *serverPool) parseTrustedServers() []*discover.Node {
 	nodes := make([]*discover.Node, 0, len(pool.trustedNodes))
 
 	for _, enode := range pool.trustedNodes {

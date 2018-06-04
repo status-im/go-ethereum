@@ -113,7 +113,7 @@ func New(ctx *node.ServiceContext, config *eth.Config) (*LightEthereum, error) {
 
 	var trustedNodes []string
 	if leth.config.ULC != nil {
-		trustedNodes = leth.config.ULC.ULCTrustedNodes
+		trustedNodes = leth.config.ULC.TrustedServers
 	}
 	leth.relay = NewLesTxRelay(peers, leth.reqDist)
 	leth.serverPool = newServerPool(chainDb, quitSync, &leth.wg, trustedNodes)

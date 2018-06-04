@@ -764,12 +764,12 @@ func SetULC(ctx *cli.Context, cfg *eth.Config) {
 
 		err = json.Unmarshal(cfgData, &cfg.ULC)
 		if err != nil {
-			Fatalf(err.Error())
+			Fatalf("Failed to unmarshal ULC configuration: %s", err.Error())
 		}
 	}
 
 	if trustedNodes := ctx.GlobalString(ULCTrustedNodesFlag.Name); trustedNodes != "" {
-		cfg.ULC.ULCTrustedNodes = strings.Split(trustedNodes, ",")
+		cfg.ULC.TrustedServers = strings.Split(trustedNodes, ",")
 	}
 
 	if trustedFraction := ctx.GlobalInt(ULCMinTrustedFractionFlag.Name); trustedFraction > 0 {

@@ -20,7 +20,7 @@ func TestULCSyncWithOnePeer(t *testing.T) {
 	f := newFullPeerPair(t, 1, 4, testChainGen)
 	ulcConfig := &eth.ULCConfig{
 		MinTrustedFraction: 100,
-		ULCTrustedNodes:    []string{f.ID.String()},
+		TrustedServers:     []string{f.ID.String()},
 	}
 
 	l := newLightPeer(t, ulcConfig)
@@ -45,7 +45,7 @@ func TestULCReceiveAnnounce(t *testing.T) {
 	f := newFullPeerPair(t, 1, 4, testChainGen)
 	ulcConfig := &eth.ULCConfig{
 		MinTrustedFraction: 100,
-		ULCTrustedNodes:    []string{f.ID.String()},
+		TrustedServers:     []string{f.ID.String()},
 	}
 
 	key, err := crypto.GenerateKey()
@@ -93,7 +93,7 @@ func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
 	ulcConf.trustedKeys[f2.ID.String()] = struct{}{}
 	ulcConfig := &eth.ULCConfig{
 		MinTrustedFraction: 100,
-		ULCTrustedNodes:    []string{f1.ID.String(), f2.ID.String()},
+		TrustedServers:     []string{f1.ID.String(), f2.ID.String()},
 	}
 	l := newLightPeer(t, ulcConfig)
 	l.PM.ulc.minTrustedFraction = 100
