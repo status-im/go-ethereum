@@ -492,7 +492,7 @@ func (f *lightFetcher) isTrusted(hash common.Hash, minTrustedFraction int) bool 
 		numAgreed = numAgreed + 1
 	}
 
-	return 100*numAgreed/numPeers > minTrustedFraction
+	return 100*numAgreed/numPeers >= minTrustedFraction
 }
 
 func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
