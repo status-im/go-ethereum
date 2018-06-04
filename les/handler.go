@@ -227,7 +227,7 @@ func NewProtocolManager(
 
 	if lightSync {
 		manager.downloader = downloader.New(downloader.LightSync, chainDb, manager.eventMux, nil, blockchain, removePeer)
-		if manager.ulc != nil && len(manager.ulc.trustedKeys) > 0 {
+		if manager.isULCEnabled() {
 			manager.downloader.IsTrustedPeer = manager.ulc.isTrusted
 		}
 		manager.peers.notify((*downloaderPeerNotify)(manager))
@@ -280,7 +280,7 @@ func (pm *ProtocolManager) Stop() {
 
 func (pm *ProtocolManager) newPeer(pv int, nv uint64, p *p2p.Peer, rw p2p.MsgReadWriter) *peer {
 	var isTrusted bool
-	if pm.ulc != nil {
+	if pm.isULCEnabled() {
 		isTrusted = pm.ulc.isTrusted(p.ID())
 	}
 	return newPeer(pv, nv, isTrusted, p, newMeteredMsgWriter(rw))
@@ -1192,6 +1192,14 @@ func (pm *ProtocolManager) txStatus(hashes []common.Hash) []txStatus {
 		}
 	}
 	return stats
+}
+
+// isULCEnabled returns true if we can use ULC
+func (pm *ProtocolManager) isULCEnabled() bool {
+	if pm.ulc == nil || len(pm.ulc.trustedKeys) == 0 {
+		return false
+	}
+	return true
 }
 
 // NodeInfo represents a short summary of the Ethereum sub-protocol metadata

@@ -407,7 +407,7 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 		bestTd      *big.Int
 		bestSyncing bool
 	)
-	if f.pm == nil || f.pm.ulc == nil {
+	if !f.pm.isULCEnabled() {
 		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForLES()
 	} else {
 		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForULC()
@@ -479,7 +479,7 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 
 // isTrustedHash checks if the block can be trusted by the minimum trusted fraction.
 func (f *lightFetcher) isTrustedHash(hash common.Hash) bool {
-	if f.pm == nil || f.pm.ulc == nil {
+	if !f.pm.isULCEnabled() {
 		return true
 	}
 	var numAgreed int
@@ -588,7 +588,7 @@ func (f *lightFetcher) processResponse(req fetchRequest, resp fetchResponse) boo
 	}
 
 	checkFreq := 1
-	if f.pm.ulc != nil && len(f.pm.ulc.trustedKeys) > 0 {
+	if f.pm.isULCEnabled() {
 		checkFreq = 0
 	}
 
@@ -714,7 +714,7 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 	}
 
 	n := fp.lastAnnounced
-	if f.pm == nil || f.pm.ulc == nil {
+	if f.pm.isULCEnabled() {
 		var unapprovedHashes []common.Hash
 		//overwrite last announced for ULC mode
 		n, unapprovedHashes = f.lastValidTrieNode(p)
