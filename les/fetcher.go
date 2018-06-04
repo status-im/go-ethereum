@@ -22,8 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"fmt"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/mclock"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -409,7 +407,7 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 		bestTd      *big.Int
 		bestSyncing bool
 	)
-	if f.pm == nil || f.pm.ulc == nil {
+	if !f.pm.isULCEnabled() {
 		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForLES()
 	} else {
 		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForULC()
@@ -460,7 +458,6 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 	for p, fp := range f.peers {
 		for hash, n := range fp.nodeByHash {
 			if !f.pm.ulc.isTrusted(p.ID()) {
-				log.Warn(fmt.Sprintf("f.pm.ulc.isTrusted(p.ID()) == false "), "id", p.ID())
 				continue
 			}
 
@@ -469,7 +466,7 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 			}
 
 			amount := f.requestAmount(p, n)
-			if (bestTd == nil || n.td.Cmp(bestTd) > 0) && f.isTrusted(hash, f.pm.ulc.minTrustedFraction) {
+			if (bestTd == nil || n.td.Cmp(bestTd) > 0) && f.isTrustedHash(hash) {
 				bestHash = hash
 				bestTd = n.td
 				bestAmount = amount
@@ -480,9 +477,11 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 	return
 }
 
-// istTrusted checks if the node can be trusted by the minimum trusted fraction.
-func (f *lightFetcher) isTrusted(hash common.Hash, minTrustedFraction int) bool {
-	numPeers := len(f.peers)
+// isTrustedHash checks if the block can be trusted by the minimum trusted fraction.
+func (f *lightFetcher) isTrustedHash(hash common.Hash) bool {
+	if !f.pm.isULCEnabled() {
+		return true
+	}
 	var numAgreed int
 	for _, fp := range f.peers {
 		if _, ok := fp.nodeByHash[hash]; !ok {
@@ -492,7 +491,7 @@ func (f *lightFetcher) isTrusted(hash common.Hash, minTrustedFraction int) bool 
 		numAgreed = numAgreed + 1
 	}
 
-	return 100*numAgreed/numPeers >= minTrustedFraction
+	return 100*numAgreed/len(f.pm.ulc.trustedKeys) >= f.pm.ulc.minTrustedFraction
 }
 
 func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
@@ -589,7 +588,7 @@ func (f *lightFetcher) processResponse(req fetchRequest, resp fetchResponse) boo
 	}
 
 	checkFreq := 1
-	if f.pm.ulc != nil && len(f.pm.ulc.trustedKeys) > 0 {
+	if f.pm.isULCEnabled() {
 		checkFreq = 0
 	}
 
@@ -713,7 +712,15 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 		p.Log().Debug("Unknown peer to check sync headers")
 		return
 	}
+
 	n := fp.lastAnnounced
+	if f.pm.isULCEnabled() {
+		var unapprovedHashes []common.Hash
+		// Overwrite last announced for ULC mode
+		n, unapprovedHashes = f.lastValidTrieNode(p)
+		f.chain.Rollback(unapprovedHashes)
+	}
+
 	var td *big.Int
 	for n != nil {
 		if td = f.chain.GetTd(n.hash, n.number); td != nil {
@@ -721,14 +728,31 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 		}
 		n = n.parent
 	}
-	// now n is the latest downloaded header after syncing
-	if n == nil {
+
+	// Now n is the latest downloaded/approved header after syncing
+	if n == nil && !p.isTrusted {
 		p.Log().Debug("Synchronisation failed")
 		go f.pm.removePeer(p.id)
 	} else {
 		header := f.chain.GetHeader(n.hash, n.number)
 		f.newHeaders([]*types.Header{header}, []*big.Int{td})
 	}
+}
+
+// lastValidTrieNode return last approved treeNode and a list of unapproved hashes
+func (f *lightFetcher) lastValidTrieNode(p *peer) (*fetcherTreeNode, []common.Hash) {
+	unapprovedHashes := make([]common.Hash, 0)
+
+	fp := f.peers[p]
+	last := fp.lastAnnounced
+	for last != nil {
+		if f.isTrustedHash(last.hash) {
+			break
+		}
+		unapprovedHashes = append(unapprovedHashes, last.hash)
+		last = last.parent
+	}
+	return last, unapprovedHashes
 }
 
 // checkKnownNode checks if a block tree node is known (downloaded and validated)

@@ -1,7 +1,6 @@
 package les
 
 import (
-	"crypto/rand"
 	"fmt"
 	"reflect"
 	"testing"
@@ -29,12 +28,12 @@ func TestULCSyncWithOnePeer(t *testing.T) {
 		t.Fatal("blocks are equal")
 	}
 
-	fPeer, _, err := connectPeers(f, l, 2)
+	_, _, err := connectPeers(f, l, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	l.PM.synchronise(fPeer)
+	l.PM.fetcher.nextRequest()
 
 	if !reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
 		t.Fatal("sync doesn't work")
@@ -83,11 +82,9 @@ func TestULCReceiveAnnounce(t *testing.T) {
 	l.PM.peers.lock.Unlock()
 }
 
-//TODO(b00ris) it's failing test. it should be fixed by https://github.com/status-im/go-ethereum/issues/51
 func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
-	t.Skip()
 	f1 := newFullPeerPair(t, 1, 4, testChainGen)
-	f2 := newFullPeerPair(t, 3, 0, nil)
+	f2 := newFullPeerPair(t, 2, 0, nil)
 	ulcConf := &ulc{minTrustedFraction: 100, trustedKeys: make(map[string]struct{})}
 	ulcConf.trustedKeys[f1.ID.String()] = struct{}{}
 	ulcConf.trustedKeys[f2.ID.String()] = struct{}{}
@@ -98,20 +95,57 @@ func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
 	l := newLightPeer(t, ulcConfig)
 	l.PM.ulc.minTrustedFraction = 100
 
-	fPeer1, lPeer1, err := connectPeers(f1, l, 2)
-	fPeer2, lPeer2, err := connectPeers(f2, l, 2)
+	_, _, err := connectPeers(f1, l, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = connectPeers(f2, l, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, _ = lPeer1, lPeer2
+	l.PM.fetcher.nextRequest()
 
-	l.PM.synchronise(fPeer1)
-	l.PM.synchronise(fPeer2)
+	if reflect.DeepEqual(f1.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
+		t.Fatal("Incorrect hash: second peer has empty chain")
+	}
+}
 
-	time.Sleep(time.Second)
-	if l.PM.blockchain.CurrentHeader() != nil {
-		t.Fatal("Should be empty")
+func TestULCShouldNotSyncWithThreePeersOneHaveEmptyChain(t *testing.T) {
+	f1 := newFullPeerPair(t, 1, 4, testChainGen)
+	f2 := newFullPeerPair(t, 2, 4, testChainGen)
+	f3 := newFullPeerPair(t, 3, 0, nil)
+	ulcConf := &ulc{minTrustedFraction: 60, trustedKeys: make(map[string]struct{})}
+	ulcConf.trustedKeys[f1.ID.String()] = struct{}{}
+	ulcConf.trustedKeys[f2.ID.String()] = struct{}{}
+	ulcConfig := &eth.ULCConfig{
+		MinTrustedFraction: 60,
+		TrustedServers:     []string{f1.ID.String(), f2.ID.String()},
+	}
+	l := newLightPeer(t, ulcConfig)
+	l.PM.ulc.minTrustedFraction = 60
+
+	_, _, err := connectPeers(f1, l, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = connectPeers(f2, l, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = connectPeers(f3, l, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.PM.fetcher.nextRequest()
+
+	if !reflect.DeepEqual(f1.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
+		t.Fatal("Incorrect hash")
+	}
+	if !reflect.DeepEqual(f2.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
+		t.Fatal("Incorrect hash")
 	}
 }
 
@@ -159,6 +193,7 @@ func connectPeers(full, light pairPeer, version int) (*peer, *peer, error) {
 	return peerFull, peerLight, nil
 }
 
+// newFullPeerPair creates node with full sync mode
 func newFullPeerPair(t *testing.T, index int, numberOfblocks int, chainGen func(int, *core.BlockGen)) pairPeer {
 	db := ethdb.NewMemDatabase()
 
@@ -168,10 +203,16 @@ func newFullPeerPair(t *testing.T, index int, numberOfblocks int, chainGen func(
 		Name: "full node",
 		PM:   pmFull,
 	}
-	rand.Read(peerPairFull.ID[:])
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal("generate key err:", err)
+	}
+	ID := discover.PubkeyID(&key.PublicKey)
+	peerPairFull.ID = ID
 	return peerPairFull
 }
 
+// newLightPeer creates node with light sync mode
 func newLightPeer(t *testing.T, ulcConfig *eth.ULCConfig) pairPeer {
 	peers := newPeerSet()
 	dist := newRequestDistributor(peers, make(chan struct{}))
@@ -185,7 +226,14 @@ func newLightPeer(t *testing.T, ulcConfig *eth.ULCConfig) pairPeer {
 		Name: "ulc node",
 		PM:   pmLight,
 	}
-	rand.Read(peerPairLight.ID[:])
+
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal("generate key err:", err)
+	}
+	ID := discover.PubkeyID(&key.PublicKey)
+
+	peerPairLight.ID = ID
 
 	return peerPairLight
 }
