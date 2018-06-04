@@ -104,7 +104,7 @@ type serverPool struct {
 	discNodes     chan *discv5.Node
 	discLookups   chan bool
 
-	trustedNodes []string
+	trustedNodes         []string
 	entries              map[discover.NodeID]*poolEntry
 	lock                 sync.Mutex
 	timeout, enableRetry chan *poolEntry
@@ -129,7 +129,7 @@ func newServerPool(db ethdb.Database, quit chan struct{}, wg *sync.WaitGroup, tr
 		knownSelect:  newWeightedRandomSelect(),
 		newSelect:    newWeightedRandomSelect(),
 		fastDiscover: true,
-		trustedNodes:trustedNodes,
+		trustedNodes: trustedNodes,
 	}
 
 	pool.trustedQueue = newPoolEntryQueue(maxKnownEntries, nil)
@@ -413,16 +413,17 @@ func (pool *serverPool) loadNodes() {
 
 }
 
+// parseULCTrustedNodes returns valid and parsed by discovery enodes.
 func (pool *serverPool) parseULCTrustedNodes() []*discover.Node {
-	nodes:= make([]*discover.Node,  0, len(pool.trustedNodes))
+	nodes := make([]*discover.Node, 0, len(pool.trustedNodes))
 
-	for _, enode:=range pool.trustedNodes {
+	for _, enode := range pool.trustedNodes {
 		node, err := discover.ParseNode(enode)
 		if err != nil {
 			log.Warn("Trusted node URL invalid", "enode", enode, "err", err)
 			continue
 		}
-		nodes=append(nodes, node)
+		nodes = append(nodes, node)
 	}
 	return nodes
 }

@@ -163,7 +163,7 @@ var (
 	}
 	LightModeFlag = cli.BoolFlag{
 		Name:  "light",
-		Usage: "Enable light client mode (replaced by --syncmode)",
+		Usage: "Enable light client mode(LES) (replaced by --syncmode)",
 	}
 	ULCModeConfigFlag = cli.StringFlag{
 		Name:  "les.ulcconfig",
@@ -171,12 +171,12 @@ var (
 	}
 	OnlyAnnounceModeFlag = cli.BoolFlag{
 		Name:  "les.onlyannounce",
-		Usage: "Les server sends only announce",
+		Usage: "LES server sends only announce",
 	}
 	ULCMinTrustedFractionFlag = cli.IntFlag{
 		Name:  "les.mintrustedfraction",
-		Usage: "Les server sends only announce",
-		Value:eth.DefaultUTCMinTrustedFraction,
+		Usage: "LES server sends only announce",
+		Value: eth.DefaultUTCMinTrustedFraction,
 	}
 	ULCTrustedNodesFlag = cli.StringFlag{
 		Name:  "les.trusted",
@@ -749,17 +749,17 @@ func setIPC(ctx *cli.Context, cfg *node.Config) {
 
 // SetULC setup ULC config from file if given.
 func SetULC(ctx *cli.Context, cfg *eth.Config) {
-	//ulc config haven't loaded from global config, ULC Config and ULC Trusted Nodes not defined
-	if cfg.ULC==nil && (ctx.GlobalIsSet(ULCModeConfigFlag.Name) || ctx.GlobalIsSet(ULCTrustedNodesFlag.Name)) == false  {
+	// ULC config isn't loaded from global config and ULC config and ULC trusted nodes are not defined.
+	if cfg.ULC == nil && (ctx.GlobalIsSet(ULCModeConfigFlag.Name) || ctx.GlobalIsSet(ULCTrustedNodesFlag.Name)) == false {
 		return
 	}
-	cfg.ULC=&eth.ULCConfig{}
+	cfg.ULC = &eth.ULCConfig{}
 
 	path := ctx.GlobalString(ULCModeConfigFlag.Name)
 	if path != "" {
 		cfgData, err := ioutil.ReadFile(path)
 		if err != nil {
-			Fatalf("Failed to read ULC config file: %v", err)
+			Fatalf("Failed to unmarshal ULC configuration: %v", err)
 		}
 
 		err = json.Unmarshal(cfgData, &cfg.ULC)
@@ -768,15 +768,16 @@ func SetULC(ctx *cli.Context, cfg *eth.Config) {
 		}
 	}
 
-	if trustedNodes:=ctx.GlobalString(ULCTrustedNodesFlag.Name); trustedNodes!="" {
-		cfg.ULC.ULCTrustedNodes=strings.Split(trustedNodes,";")
+	if trustedNodes := ctx.GlobalString(ULCTrustedNodesFlag.Name); trustedNodes != "" {
+		cfg.ULC.ULCTrustedNodes = strings.Split(trustedNodes, ",")
 	}
 
-	if trustedFraction:=ctx.GlobalInt(ULCMinTrustedFractionFlag.Name); trustedFraction>0 {
-		cfg.ULC.MinTrustedFraction=trustedFraction
+	if trustedFraction := ctx.GlobalInt(ULCMinTrustedFractionFlag.Name); trustedFraction > 0 {
+		cfg.ULC.MinTrustedFraction = trustedFraction
 	}
-	if cfg.ULC.MinTrustedFraction<=0 && cfg.ULC.MinTrustedFraction> 100 {
-		cfg.ULC.MinTrustedFraction=eth.DefaultUTCMinTrustedFraction
+	if cfg.ULC.MinTrustedFraction <= 0 && cfg.ULC.MinTrustedFraction > 100 {
+		log.Error("MinTrustedFraction is invalid", "MinTrustedFraction", cfg.ULC.MinTrustedFraction, "Changed to default", eth.DefaultUTCMinTrustedFraction)
+		cfg.ULC.MinTrustedFraction = eth.DefaultUTCMinTrustedFraction
 	}
 }
 
