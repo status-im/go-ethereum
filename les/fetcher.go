@@ -716,7 +716,7 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 	n := fp.lastAnnounced
 	if f.pm.isULCEnabled() {
 		var unapprovedHashes []common.Hash
-		//overwrite last announced for ULC mode
+		// Overwrite last announced for ULC mode
 		n, unapprovedHashes = f.lastValidTrieNode(p)
 		f.chain.Rollback(unapprovedHashes)
 	}
@@ -729,7 +729,7 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 		n = n.parent
 	}
 
-	// now n is the latest downloaded/approved header after syncing
+	// Now n is the latest downloaded/approved header after syncing
 	if n == nil && !p.isTrusted {
 		p.Log().Debug("Synchronisation failed")
 		go f.pm.removePeer(p.id)
@@ -738,6 +738,8 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 		f.newHeaders([]*types.Header{header}, []*big.Int{td})
 	}
 }
+
+// lastValidTrieNode return last approved treeNode and a list of unapproved hashes
 func (f *lightFetcher) lastValidTrieNode(p *peer) (*fetcherTreeNode, []common.Hash) {
 	unapprovedHashes := make([]common.Hash, 0)
 

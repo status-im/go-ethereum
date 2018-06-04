@@ -107,9 +107,8 @@ func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
 	l.PM.fetcher.nextRequest()
 
 	if reflect.DeepEqual(f1.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
-		t.Fatal("Incorrect hash. Second peer has empty chain.")
+		t.Fatal("Incorrect hash: second peer has empty chain")
 	}
-
 }
 
 func TestULCShouldNotSyncWithThreePeersOneHaveEmptyChain(t *testing.T) {
@@ -194,6 +193,7 @@ func connectPeers(full, light pairPeer, version int) (*peer, *peer, error) {
 	return peerFull, peerLight, nil
 }
 
+// newFullPeerPair creates node with full sync mode
 func newFullPeerPair(t *testing.T, index int, numberOfblocks int, chainGen func(int, *core.BlockGen)) pairPeer {
 	db := ethdb.NewMemDatabase()
 
@@ -212,6 +212,7 @@ func newFullPeerPair(t *testing.T, index int, numberOfblocks int, chainGen func(
 	return peerPairFull
 }
 
+// newLightPeer creates node with light sync mode
 func newLightPeer(t *testing.T, ulcConfig *eth.ULCConfig) pairPeer {
 	peers := newPeerSet()
 	dist := newRequestDistributor(peers, make(chan struct{}))
