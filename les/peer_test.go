@@ -143,7 +143,8 @@ func TestPeerHandshakeDefaultAllRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.isOnlyAnnounce != false {
+
+	if p.isOnlyAnnounce {
 		t.Fatal("Incorrect announceType")
 	}
 }
@@ -210,7 +211,7 @@ func TestPeerHandshakeClientReceiveOnlyAnnounceRequestsHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if p.isOnlyAnnounce == false {
+	if !p.isOnlyAnnounce {
 		t.Fatal("isOnlyAnnounce must be true")
 	}
 }

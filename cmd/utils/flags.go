@@ -750,7 +750,7 @@ func setIPC(ctx *cli.Context, cfg *node.Config) {
 // SetULC setup ULC config from file if given.
 func SetULC(ctx *cli.Context, cfg *eth.Config) {
 	// ULC config isn't loaded from global config and ULC config and ULC trusted nodes are not defined.
-	if cfg.ULC == nil && (ctx.GlobalIsSet(ULCModeConfigFlag.Name) || ctx.GlobalIsSet(ULCTrustedNodesFlag.Name)) == false {
+	if cfg.ULC == nil && !(ctx.GlobalIsSet(ULCModeConfigFlag.Name) || ctx.GlobalIsSet(ULCTrustedNodesFlag.Name)) {
 		return
 	}
 	cfg.ULC = &eth.ULCConfig{}
