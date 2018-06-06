@@ -392,7 +392,7 @@ func testGetCHTProofs(t *testing.T, protocol int) {
 
 	// Wait a while for the CHT indexer to process the new headers
 	time.Sleep(100 * time.Millisecond * time.Duration(frequency/light.CHTFrequencyServer)) // Chain indexer throttling
-	time.Sleep(250 * time.Millisecond)                                                     // CI tester slack
+	time.Sleep(1000 * time.Millisecond)                                                    // CI tester slack
 
 	// Assemble the proofs from the different protocols
 	header := bc.GetHeaderByNumber(frequency)
