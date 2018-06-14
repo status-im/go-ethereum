@@ -54,8 +54,9 @@ func TestFetcherULCPeerSelector(t *testing.T) {
 
 		peers: map[*peer]*fetcherPeerInfo{
 			{
-				id:   "peer1",
-				Peer: p2p.NewPeer(id1, "peer1", []p2p.Cap{}),
+				id:        "peer1",
+				Peer:      p2p.NewPeer(id1, "peer1", []p2p.Cap{}),
+				isTrusted: true,
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
 					ftn1.hash: ftn1,
@@ -63,8 +64,9 @@ func TestFetcherULCPeerSelector(t *testing.T) {
 				},
 			},
 			{
-				Peer: p2p.NewPeer(id2, "peer2", []p2p.Cap{}),
-				id:   "peer2",
+				Peer:      p2p.NewPeer(id2, "peer2", []p2p.Cap{}),
+				id:        "peer2",
+				isTrusted: true,
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
 					ftn1.hash: ftn1,
@@ -72,8 +74,9 @@ func TestFetcherULCPeerSelector(t *testing.T) {
 				},
 			},
 			{
-				id:   "peer3",
-				Peer: p2p.NewPeer(id3, "peer3", []p2p.Cap{}),
+				id:        "peer3",
+				Peer:      p2p.NewPeer(id3, "peer3", []p2p.Cap{}),
+				isTrusted: true,
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
 					ftn1.hash: ftn1,
@@ -82,8 +85,9 @@ func TestFetcherULCPeerSelector(t *testing.T) {
 				},
 			},
 			{
-				id:   "peer4",
-				Peer: p2p.NewPeer(id4, "peer4", []p2p.Cap{}),
+				id:        "peer4",
+				Peer:      p2p.NewPeer(id4, "peer4", []p2p.Cap{}),
+				isTrusted: true,
 			}: {
 				nodeByHash: map[common.Hash]*fetcherTreeNode{
 					ftn1.hash: ftn1,
@@ -113,64 +117,6 @@ func TestFetcherULCPeerSelector(t *testing.T) {
 	}
 
 	_, _ = bestAmount, sync
-}
-
-func TestFetcherProcessResponseDisablePowValidation(t *testing.T) {
-	header := &types.Header{Number: big.NewInt(1)}
-	lf := lightFetcher{
-		pm: &ProtocolManager{
-			ulc: &ulc{
-				trustedKeys: map[string]struct{}{
-					"peer1": {},
-					"peer2": {},
-					"peer3": {},
-					"peer4": {},
-				},
-				minTrustedFraction: 70,
-			},
-		},
-		chain: &lightChainStub{
-			tds: map[common.Hash]*big.Int{
-				header.Hash(): big.NewInt(1),
-			},
-			insertHeaderChainAssertFunc: func(chain []*types.Header, checkFreq int) (int, error) {
-				if checkFreq != 0 {
-					t.Fatal("POW validation is not disabled")
-				}
-				return 0, nil
-			},
-			headers: map[common.Hash]*types.Header{
-				header.Hash(): header,
-			},
-		},
-	}
-	lf.processResponse(fetchRequest{amount: 1, hash: header.Hash()}, fetchResponse{headers: []*types.Header{header}})
-}
-
-func TestFetcherProcessResponseDisablePowValidationFail(t *testing.T) {
-	header := &types.Header{Number: big.NewInt(1)}
-	lf := lightFetcher{
-		pm: &ProtocolManager{
-			ulc: &ulc{
-				trustedKeys: map[string]struct{}{},
-			},
-		},
-		chain: &lightChainStub{
-			tds: map[common.Hash]*big.Int{
-				header.Hash(): big.NewInt(1),
-			},
-			insertHeaderChainAssertFunc: func(chain []*types.Header, checkFreq int) (int, error) {
-				if checkFreq == 0 {
-					t.Fatal("POW validation is disabled")
-				}
-				return 0, nil
-			},
-			headers: map[common.Hash]*types.Header{
-				header.Hash(): header,
-			},
-		},
-	}
-	lf.processResponse(fetchRequest{amount: 1, hash: header.Hash()}, fetchResponse{headers: []*types.Header{header}})
 }
 
 type lightChainStub struct {

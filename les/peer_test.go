@@ -69,7 +69,7 @@ func TestPeerHandshakeSetAnnounceTypeToAnnounceTypeSignedForTrustedPeer(t *testi
 		t.Fatalf("Handshake error: %s", err)
 	}
 
-	if p.requestAnnounceType != announceTypeSigned {
+	if p.announceType != announceTypeSigned {
 		t.Fatal("Incorrect announceType")
 	}
 }
@@ -114,7 +114,7 @@ func TestPeerHandshakeAnnounceTypeSignedForTrustedPeersPeerNotInTrusted(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.requestAnnounceType == announceTypeSigned {
+	if p.announceType == announceTypeSigned {
 		t.Fatal("Incorrect announceType")
 	}
 }

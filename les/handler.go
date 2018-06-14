@@ -227,9 +227,6 @@ func NewProtocolManager(
 
 	if lightSync {
 		manager.downloader = downloader.New(downloader.LightSync, chainDb, manager.eventMux, nil, blockchain, removePeer)
-		if manager.isULCEnabled() {
-			manager.downloader.IsTrustedPeer = manager.ulc.isTrusted
-		}
 		manager.peers.notify((*downloaderPeerNotify)(manager))
 		manager.fetcher = newLightFetcher(manager)
 	}
@@ -409,7 +406,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 	// Block header query, collect the requested headers and reply
 	case AnnounceMsg:
 		p.Log().Trace("Received announce message")
-		if p.requestAnnounceType == announceTypeNone {
+		if p.announceType == announceTypeNone {
 			return errResp(ErrUnexpectedResponse, "")
 		}
 
@@ -418,7 +415,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			return errResp(ErrDecode, "%v: %v", msg, err)
 		}
 
-		if p.requestAnnounceType == announceTypeSigned {
+		if p.announceType == announceTypeSigned {
 			if err := req.checkSignature(p.pubKey); err != nil {
 				p.Log().Trace("Invalid announcement signature", "err", err)
 				return err
@@ -1289,13 +1286,11 @@ func (pc *peerConnection) RequestHeadersByNumber(origin uint64, amount int, skip
 
 func (d *downloaderPeerNotify) registerPeer(p *peer) {
 	pm := (*ProtocolManager)(d)
-	if pm.ulc == nil || p.isTrusted {
-		pc := &peerConnection{
-			manager: pm,
-			peer:    p,
-		}
-		pm.downloader.RegisterLightPeer(p.id, ethVersion, pc)
+	pc := &peerConnection{
+		manager: pm,
+		peer:    p,
 	}
+	pm.downloader.RegisterLightPeer(p.id, ethVersion, pc)
 }
 
 func (d *downloaderPeerNotify) unregisterPeer(p *peer) {

@@ -364,7 +364,7 @@ func (pm *ProtocolManager) blockLoop() {
 						)
 
 						for _, p := range peers {
-							switch p.requestAnnounceType {
+							switch p.announceType {
 
 							case announceTypeSimple:
 								select {

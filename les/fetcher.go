@@ -137,7 +137,6 @@ func newLightFetcher(pm *ProtocolManager) *lightFetcher {
 
 // syncLoop is the main event loop of the light fetcher
 func (f *lightFetcher) syncLoop() {
-	log.Warn("lightFetcher syncLoop started")
 	requesting := false
 	defer f.pm.wg.Done()
 	for {
@@ -468,10 +467,6 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 	defer f.peersLock.RUnlock()
 	for p, fp := range f.peers {
 		for hash, n := range fp.nodeByHash {
-			if !f.pm.ulc.isTrusted(p.ID()) {
-				continue
-			}
-
 			if f.checkKnownNode(p, n) || n.requested {
 				continue
 			}
@@ -495,7 +490,10 @@ func (f *lightFetcher) isTrustedHash(hash common.Hash) bool {
 	}
 
 	var numAgreed int
-	for _, fp := range f.peers {
+	for p, fp := range f.peers {
+		if !p.isTrusted {
+			continue
+		}
 		if _, ok := fp.nodeByHash[hash]; !ok {
 			continue
 		}
@@ -601,12 +599,7 @@ func (f *lightFetcher) processResponse(req fetchRequest, resp fetchResponse) boo
 		headers[int(req.amount)-1-i] = header
 	}
 
-	checkFreq := 1
-	if f.pm.isULCEnabled() {
-		checkFreq = 0
-	}
-
-	if _, err := f.chain.InsertHeaderChain(headers, checkFreq); err != nil {
+	if _, err := f.chain.InsertHeaderChain(headers, 1); err != nil {
 		if err == consensus.ErrFutureBlock {
 			return true
 		}

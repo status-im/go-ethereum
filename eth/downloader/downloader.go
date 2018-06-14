@@ -25,7 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	ethereum "github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -33,7 +33,6 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -114,8 +113,7 @@ type Downloader struct {
 	blockchain BlockChain
 
 	// Callbacks
-	dropPeer      peerDropFn // Drops a peer for misbehaving
-	IsTrustedPeer func(p discover.NodeID) bool
+	dropPeer peerDropFn // Drops a peer for misbehaving
 
 	// Status
 	synchroniseMock func(id string, hash common.Hash) error // Replacement for synchronise during testing
@@ -1270,10 +1268,6 @@ func (d *Downloader) processHeaders(origin uint64, pivot uint64, td *big.Int) er
 					frequency := fsHeaderCheckFrequency
 					if chunk[len(chunk)-1].Number.Uint64()+uint64(fsHeaderForceVerify) > pivot {
 						frequency = 1
-						//disable validation for trusted peers
-						if d.IsTrustedPeer != nil {
-							frequency = 0
-						}
 					}
 					if n, err := d.lightchain.InsertHeaderChain(chunk, frequency); err != nil {
 						// If some headers were inserted, add them too to the rollback list
