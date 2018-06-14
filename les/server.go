@@ -66,6 +66,7 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 		eth.ChainDb(),
 		nil,
 		nil,
+		nil,
 		quitSync,
 		new(sync.WaitGroup),
 		config.ULC)

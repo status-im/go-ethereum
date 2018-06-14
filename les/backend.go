@@ -145,6 +145,7 @@ func New(ctx *node.ServiceContext, config *eth.Config) (*LightEthereum, error) {
 		chainDb,
 		leth.odr,
 		leth.relay,
+		leth.serverPool,
 		quitSync,
 		&leth.wg,
 		config.ULC); err != nil {
