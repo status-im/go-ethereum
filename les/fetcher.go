@@ -494,7 +494,10 @@ func (f *lightFetcher) isTrustedHash(hash common.Hash) bool {
 	}
 
 	var numAgreed int
-	for _, fp := range f.peers {
+	for p, fp := range f.peers {
+		if !p.isTrusted {
+			continue
+		}
 		if _, ok := fp.nodeByHash[hash]; !ok {
 			continue
 		}
