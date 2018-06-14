@@ -1286,13 +1286,11 @@ func (pc *peerConnection) RequestHeadersByNumber(origin uint64, amount int, skip
 
 func (d *downloaderPeerNotify) registerPeer(p *peer) {
 	pm := (*ProtocolManager)(d)
-	if pm.ulc == nil || p.isTrusted {
-		pc := &peerConnection{
-			manager: pm,
-			peer:    p,
-		}
-		pm.downloader.RegisterLightPeer(p.id, ethVersion, pc)
+	pc := &peerConnection{
+		manager: pm,
+		peer:    p,
 	}
+	pm.downloader.RegisterLightPeer(p.id, ethVersion, pc)
 }
 
 func (d *downloaderPeerNotify) unregisterPeer(p *peer) {

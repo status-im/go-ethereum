@@ -467,10 +467,6 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 	defer f.peersLock.RUnlock()
 	for p, fp := range f.peers {
 		for hash, n := range fp.nodeByHash {
-			if !f.pm.ulc.isTrusted(p.ID()) {
-				continue
-			}
-
 			if f.checkKnownNode(p, n) || n.requested {
 				continue
 			}
