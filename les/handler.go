@@ -227,9 +227,6 @@ func NewProtocolManager(
 
 	if lightSync {
 		manager.downloader = downloader.New(downloader.LightSync, chainDb, manager.eventMux, nil, blockchain, removePeer)
-		if manager.isULCEnabled() {
-			manager.downloader.IsTrustedPeer = manager.ulc.isTrusted
-		}
 		manager.peers.notify((*downloaderPeerNotify)(manager))
 		manager.fetcher = newLightFetcher(manager)
 	}

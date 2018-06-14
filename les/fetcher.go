@@ -137,7 +137,6 @@ func newLightFetcher(pm *ProtocolManager) *lightFetcher {
 
 // syncLoop is the main event loop of the light fetcher
 func (f *lightFetcher) syncLoop() {
-	log.Warn("lightFetcher syncLoop started")
 	requesting := false
 	defer f.pm.wg.Done()
 	for {
@@ -601,12 +600,7 @@ func (f *lightFetcher) processResponse(req fetchRequest, resp fetchResponse) boo
 		headers[int(req.amount)-1-i] = header
 	}
 
-	checkFreq := 1
-	if f.pm.isULCEnabled() {
-		checkFreq = 0
-	}
-
-	if _, err := f.chain.InsertHeaderChain(headers, checkFreq); err != nil {
+	if _, err := f.chain.InsertHeaderChain(headers, 1); err != nil {
 		if err == consensus.ErrFutureBlock {
 			return true
 		}

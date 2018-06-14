@@ -151,6 +151,9 @@ func New(ctx *node.ServiceContext, config *eth.Config) (*LightEthereum, error) {
 		return nil, err
 	}
 
+	if leth.protocolManager.isULCEnabled() {
+		leth.blockchain.DisableCheckFreq()
+	}
 	leth.ApiBackend = &LesApiBackend{leth, nil}
 
 	gpoParams := config.GPO
