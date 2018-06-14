@@ -58,7 +58,7 @@ type peer struct {
 	version int    // Protocol version negotiated
 	network uint64 // Network ID being on
 
-	requestAnnounceType uint64
+	announceType uint64
 
 	id string
 
@@ -423,11 +423,11 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 		p.fcCosts = list.decode()
 	} else {
 		//on client node
-		p.requestAnnounceType = announceTypeSimple
+		p.announceType = announceTypeSimple
 		if p.isTrusted {
-			p.requestAnnounceType = announceTypeSigned
+			p.announceType = announceTypeSigned
 		}
-		send = send.add("announceType", p.requestAnnounceType)
+		send = send.add("announceType", p.announceType)
 	}
 
 	recvList, err := p.sendReceiveHandshake(send)
@@ -475,9 +475,9 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis 
 		/*if recv.get("serveStateSince", nil) == nil {
 			return errResp(ErrUselessPeer, "wanted client, got server")
 		}*/
-		if recv.get("announceType", &p.requestAnnounceType) != nil {
+		if recv.get("announceType", &p.announceType) != nil {
 			//set default announceType on server side
-			p.requestAnnounceType = announceTypeSimple
+			p.announceType = announceTypeSimple
 		}
 		p.fcClient = flowcontrol.NewClientNode(server.fcManager, server.defParams)
 	} else {
