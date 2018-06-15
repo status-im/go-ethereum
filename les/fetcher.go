@@ -524,14 +524,16 @@ func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
 			go func() {
 				p := dp.(*peer)
 				p.Log().Debug("Synchronisation started")
-				f.lastTrustedHeader = f.chain.CurrentHeader()
+				if f.pm.isULCEnabled() {
+					//keep last validated header before sync
+					f.setLastValidHeader(f.chain.CurrentHeader())
+				}
 				f.pm.synchronise(p)
 				f.syncDone <- p
 			}()
 			return nil
 		},
 	}
-
 }
 
 // newFetcherDistReq creates a new request for the distributor.
@@ -718,7 +720,9 @@ func (f *lightFetcher) checkAnnouncedHeaders(fp *fetcherPeerInfo, headers []*typ
 // downloaded headers as known. If none of the announced headers are found after
 // syncing, the peer is dropped.
 func (f *lightFetcher) checkSyncedHeaders(p *peer) {
+	f.peersLock.RLock()
 	fp := f.peers[p]
+	f.peersLock.RUnlock()
 	if fp == nil {
 		p.Log().Debug("Unknown peer to check sync headers")
 		return
@@ -729,20 +733,26 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 		var unapprovedHashes []common.Hash
 		// Overwrite last announced for ULC mode
 		h, unapprovedHashes = f.lastValidTrieNode(p)
+		//rollback untrusted blocks
 		f.chain.Rollback(unapprovedHashes)
 	}
 
 	n := fp.lastAnnounced
 	var td *big.Int
 	trustedHeaderExisted := false
+
+	//find last trusted block
 	for n != nil {
+		//we found last trusted header
 		if n.hash == h.Hash() {
 			trustedHeaderExisted = true
 		}
 		if td = f.chain.GetTd(n.hash, n.number); td != nil && trustedHeaderExisted {
 			break
 		}
-		if n.hash == f.lastTrustedHeader.Hash() {
+
+		//break if we found last trusted hash before sync
+		if n.hash == f.getLastValidHeader().Hash() {
 			break
 		}
 		n = n.parent
@@ -763,7 +773,7 @@ func (f *lightFetcher) lastValidTrieNode(p *peer) (*types.Header, []common.Hash)
 	unapprovedHashes := make([]common.Hash, 0)
 
 	current := f.chain.CurrentHeader()
-	for current != nil || current != f.lastTrustedHeader {
+	for current != nil || current.Hash() != f.getLastValidHeader().Hash() {
 		if f.isTrustedHash(current.Hash()) {
 			break
 		}
@@ -773,6 +783,18 @@ func (f *lightFetcher) lastValidTrieNode(p *peer) (*types.Header, []common.Hash)
 		current = f.chain.GetHeader(current.ParentHash, num.Uint64())
 	}
 	return current, unapprovedHashes
+}
+
+func (f *lightFetcher) setLastValidHeader(h *types.Header) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	f.lastTrustedHeader = h
+}
+
+func (f *lightFetcher) getLastValidHeader() *types.Header {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	return f.lastTrustedHeader
 }
 
 // checkKnownNode checks if a block tree node is known (downloaded and validated)
