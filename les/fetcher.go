@@ -53,11 +53,12 @@ type lightFetcher struct {
 	syncing            bool
 	syncDone           chan *peer
 
-	reqMu      sync.RWMutex // reqMu protects access to sent header fetch requests
-	requested  map[uint64]fetchRequest
-	deliverChn chan fetchResponse
-	timeoutChn chan uint64
-	requestChn chan bool // true if initiated from outside
+	reqMu             sync.RWMutex // reqMu protects access to sent header fetch requests
+	requested         map[uint64]fetchRequest
+	deliverChn        chan fetchResponse
+	timeoutChn        chan uint64
+	requestChn        chan bool // true if initiated from outside
+	lastTrustedHeader *types.Header
 }
 
 // lightChain extends the BlockChain interface by locking.
@@ -523,6 +524,7 @@ func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
 			go func() {
 				p := dp.(*peer)
 				p.Log().Debug("Synchronisation started")
+				f.lastTrustedHeader = f.chain.CurrentHeader()
 				f.pm.synchronise(p)
 				f.syncDone <- p
 			}()
@@ -722,17 +724,25 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 		return
 	}
 
-	n := fp.lastAnnounced
+	var h *types.Header
 	if f.pm.isULCEnabled() {
 		var unapprovedHashes []common.Hash
 		// Overwrite last announced for ULC mode
-		n, unapprovedHashes = f.lastValidTrieNode(p)
+		h, unapprovedHashes = f.lastValidTrieNode(p)
 		f.chain.Rollback(unapprovedHashes)
 	}
 
+	n := fp.lastAnnounced
 	var td *big.Int
+	trustedHeaderExisted := false
 	for n != nil {
-		if td = f.chain.GetTd(n.hash, n.number); td != nil {
+		if n.hash == h.Hash() {
+			trustedHeaderExisted = true
+		}
+		if td = f.chain.GetTd(n.hash, n.number); td != nil && trustedHeaderExisted {
+			break
+		}
+		if n.hash == f.lastTrustedHeader.Hash() {
 			break
 		}
 		n = n.parent
@@ -749,19 +759,20 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 }
 
 // lastValidTrieNode return last approved treeNode and a list of unapproved hashes
-func (f *lightFetcher) lastValidTrieNode(p *peer) (*fetcherTreeNode, []common.Hash) {
+func (f *lightFetcher) lastValidTrieNode(p *peer) (*types.Header, []common.Hash) {
 	unapprovedHashes := make([]common.Hash, 0)
 
-	fp := f.peers[p]
-	last := fp.lastAnnounced
-	for last != nil {
-		if f.isTrustedHash(last.hash) {
+	current := f.chain.CurrentHeader()
+	for current != nil || current != f.lastTrustedHeader {
+		if f.isTrustedHash(current.Hash()) {
 			break
 		}
-		unapprovedHashes = append(unapprovedHashes, last.hash)
-		last = last.parent
+		unapprovedHashes = append(unapprovedHashes, current.Hash())
+		num := current.Number
+		num.Add(num, big.NewInt(-1))
+		current = f.chain.GetHeader(current.ParentHash, num.Uint64())
 	}
-	return last, unapprovedHashes
+	return current, unapprovedHashes
 }
 
 // checkKnownNode checks if a block tree node is known (downloaded and validated)
