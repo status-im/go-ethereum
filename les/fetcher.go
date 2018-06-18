@@ -521,13 +521,13 @@ func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
 			return fp != nil && fp.nodeByHash[bestHash] != nil
 		},
 		request: func(dp distPeer) func() {
+			if f.pm.isULCEnabled() {
+				//keep last validated header before sync
+				f.setLastValidHeader(f.chain.CurrentHeader())
+			}
 			go func() {
 				p := dp.(*peer)
 				p.Log().Debug("Synchronisation started")
-				if f.pm.isULCEnabled() {
-					//keep last validated header before sync
-					f.setLastValidHeader(f.chain.CurrentHeader())
-				}
 				f.pm.synchronise(p)
 				f.syncDone <- p
 			}()
