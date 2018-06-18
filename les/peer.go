@@ -600,8 +600,10 @@ func (ps *peerSet) Unregister(id string) error {
 		for _, n := range peers {
 			n.unregisterPeer(p)
 		}
+		p.lock.Lock()
 		p.sendQueue.quit()
 		p.Peer.Disconnect(p2p.DiscUselessPeer)
+		p.lock.Unlock()
 		return nil
 	}
 }
