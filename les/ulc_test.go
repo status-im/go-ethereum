@@ -33,7 +33,9 @@ func TestULCSyncWithOnePeer(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	l.PM.fetcher.lock.Lock()
 	l.PM.fetcher.nextRequest()
+	l.PM.fetcher.lock.Unlock()
 
 	if !reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
 		t.Fatal("sync doesn't work")
@@ -104,7 +106,9 @@ func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	l.PM.fetcher.lock.Lock()
 	l.PM.fetcher.nextRequest()
+	l.PM.fetcher.lock.Unlock()
 
 	if reflect.DeepEqual(f1.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
 		t.Fatal("Incorrect hash: second peer has empty chain")
@@ -139,7 +143,9 @@ func TestULCShouldNotSyncWithThreePeersOneHaveEmptyChain(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	l.PM.fetcher.lock.Lock()
 	l.PM.fetcher.nextRequest()
+	l.PM.fetcher.lock.Unlock()
 
 	if !reflect.DeepEqual(f1.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
 		t.Fatal("Incorrect hash")
