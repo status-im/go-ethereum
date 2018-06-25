@@ -44,14 +44,12 @@ type lightFetcher struct {
 	odr   *LesOdr
 	chain lightChain
 
-	lock               sync.Mutex // lock protects access to the fetcher's internal state variables except sent requests
-	maxConfirmedTd     *big.Int
-	maxConfirmedTdLock sync.RWMutex // lock protects access to maxConfirmedTd
-	peers              map[*peer]*fetcherPeerInfo
-	peersLock          sync.RWMutex // lock protects access to peers
-	lastUpdateStats    *updateStatsEntry
-	syncing            bool
-	syncDone           chan *peer
+	lock            sync.RWMutex // lock protects access to the fetcher's internal state variables except sent requests
+	maxConfirmedTd  *big.Int
+	peers           map[*peer]*fetcherPeerInfo
+	lastUpdateStats *updateStatsEntry
+	syncing         bool
+	syncDone        chan *peer
 
 	reqMu             sync.RWMutex // reqMu protects access to sent header fetch requests
 	requested         map[uint64]fetchRequest
@@ -217,9 +215,12 @@ func (f *lightFetcher) syncLoop() {
 		case p := <-f.syncDone:
 			f.lock.Lock()
 			p.Log().Debug("Done synchronising with peer")
-			f.checkSyncedHeaders(p)
+			res, h, td := f.checkSyncedHeaders(p)
 			f.syncing = false
 			f.lock.Unlock()
+			if res {
+				f.newHeaders(h, []*big.Int{td})
+			}
 		}
 	}
 }
@@ -232,9 +233,8 @@ func (f *lightFetcher) registerPeer(p *peer) {
 	}
 	p.lock.Unlock()
 
-	f.peersLock.Lock()
-	defer f.peersLock.Unlock()
-
+	f.lock.Lock()
+	defer f.lock.Unlock()
 	f.peers[p] = &fetcherPeerInfo{nodeByHash: make(map[common.Hash]*fetcherTreeNode)}
 }
 
@@ -247,30 +247,30 @@ func (f *lightFetcher) unregisterPeer(p *peer) {
 	// check for potential timed out block delay statistics
 	f.checkUpdateStats(p, nil)
 
-	f.peersLock.Lock()
-	defer f.peersLock.Unlock()
+	f.lock.Lock()
+	defer f.lock.Unlock()
 	delete(f.peers, p)
 }
 
 // announce processes a new announcement message received from a peer, adding new
 // nodes to the peer's block tree and removing old nodes if necessary
 func (f *lightFetcher) announce(p *peer, head *announceData) {
-	f.lock.Lock()
-	defer f.lock.Unlock()
 	p.Log().Debug("Received new announcement", "number", head.Number, "hash", head.Hash, "reorg", head.ReorgDepth)
 
-	f.peersLock.Lock()
-	defer f.peersLock.Unlock()
-
+	f.lock.RLock()
 	fp := f.peers[p]
+	f.lock.RUnlock()
+
 	if fp == nil {
 		p.Log().Debug("Announcement from unknown peer")
 		return
 	}
 
+	fp.lock.RLock()
 	if fp.lastAnnounced != nil && head.Td.Cmp(fp.lastAnnounced.td) <= 0 {
 		// announced tds should be strictly monotonic
 		p.Log().Debug("Received non-monotonic td", "current", head.Td, "previous", fp.lastAnnounced.td)
+		fp.lock.RUnlock()
 		go f.pm.removePeer(p.id)
 		return
 	}
@@ -282,6 +282,9 @@ func (f *lightFetcher) announce(p *peer, head *announceData) {
 		}
 		n = n.parent
 	}
+	fp.lock.RUnlock()
+
+	f.lock.Lock()
 	if n != nil {
 		// n is now the reorg common ancestor, add a new branch of nodes
 		// check if the node count is too high to add new nodes
@@ -328,6 +331,7 @@ func (f *lightFetcher) announce(p *peer, head *announceData) {
 			fp.nodeByHash[n.hash] = n
 		}
 	}
+
 	if n == nil {
 		// could not find reorg common ancestor or had to delete entire tree, a new root and a resync is needed
 		if fp.root != nil {
@@ -342,6 +346,8 @@ func (f *lightFetcher) announce(p *peer, head *announceData) {
 	}
 
 	f.checkKnownNode(p, n)
+	f.lock.Unlock()
+
 	p.lock.Lock()
 	p.headInfo = head
 	fp.lastAnnounced = n
@@ -353,8 +359,8 @@ func (f *lightFetcher) announce(p *peer, head *announceData) {
 // peerHasBlock returns true if we can assume the peer knows the given block
 // based on its announcements
 func (f *lightFetcher) peerHasBlock(p *peer, hash common.Hash, number uint64) bool {
-	f.peersLock.Lock()
-	defer f.peersLock.Unlock()
+	f.lock.Lock()
+	defer f.lock.Unlock()
 
 	if f.syncing {
 		// always return true when syncing
@@ -363,6 +369,8 @@ func (f *lightFetcher) peerHasBlock(p *peer, hash common.Hash, number uint64) bo
 	}
 
 	fp := f.peers[p]
+	fp.lock.RLock()
+	defer fp.lock.RUnlock()
 	if fp == nil || fp.root == nil {
 		return false
 	}
@@ -440,9 +448,6 @@ func (f *lightFetcher) findBestValuesForLES() (bestHash common.Hash, bestAmount 
 	bestTd = f.getMaxConfirmedTd()
 	bestSyncing = false
 
-	f.peersLock.RLock()
-	defer f.peersLock.RUnlock()
-
 	for p, fp := range f.peers {
 		for hash, n := range fp.nodeByHash {
 			if !f.checkKnownNode(p, n) && !n.requested && (bestTd == nil || n.td.Cmp(bestTd) >= 0) {
@@ -464,8 +469,6 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 	bestTd = f.getMaxConfirmedTd()
 	bestSyncing = false
 
-	f.peersLock.RLock()
-	defer f.peersLock.RUnlock()
 	for p, fp := range f.peers {
 		for hash, n := range fp.nodeByHash {
 			if f.checkKnownNode(p, n) || n.requested {
@@ -515,8 +518,9 @@ func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
 			if p.isOnlyAnnounce {
 				return false
 			}
-			f.peersLock.Lock()
-			defer f.peersLock.Unlock()
+
+			f.lock.RLock()
+			defer f.lock.RUnlock()
 			fp := f.peers[p]
 			return fp != nil && fp.nodeByHash[bestHash] != nil
 		},
@@ -549,8 +553,8 @@ func (f *lightFetcher) newFetcherDistReq(bestHash common.Hash, reqID uint64, bes
 				return false
 			}
 
-			f.peersLock.Lock()
-			defer f.peersLock.Unlock()
+			f.lock.RLock()
+			defer f.lock.RUnlock()
 
 			fp := f.peers[p]
 			if fp == nil {
@@ -561,10 +565,9 @@ func (f *lightFetcher) newFetcherDistReq(bestHash common.Hash, reqID uint64, bes
 		},
 		request: func(dp distPeer) func() {
 			p := dp.(*peer)
-			f.lock.Lock()
-			f.peersLock.RLock()
+
+			f.lock.RLock()
 			fp := f.peers[p]
-			f.peersLock.RUnlock()
 			if fp != nil {
 				n := fp.nodeByHash[bestHash]
 				if n != nil {
@@ -627,8 +630,8 @@ func (f *lightFetcher) processResponse(req fetchRequest, resp fetchResponse) boo
 // downloaded and validated batch or headers
 func (f *lightFetcher) newHeaders(headers []*types.Header, tds []*big.Int) {
 	var maxTd *big.Int
-	f.peersLock.RLock()
-	defer f.peersLock.RUnlock()
+
+	f.lock.Lock()
 	for p, fp := range f.peers {
 		if !f.checkAnnouncedHeaders(fp, headers, tds) {
 			p.Log().Debug("Inconsistent announcement")
@@ -638,6 +641,7 @@ func (f *lightFetcher) newHeaders(headers []*types.Header, tds []*big.Int) {
 			maxTd = fp.confirmedTd
 		}
 	}
+	f.lock.Unlock()
 	if maxTd != nil {
 		f.updateMaxConfirmedTd(maxTd)
 	}
@@ -719,13 +723,11 @@ func (f *lightFetcher) checkAnnouncedHeaders(fp *fetcherPeerInfo, headers []*typ
 // checkSyncedHeaders updates peer's block tree after synchronisation by marking
 // downloaded headers as known. If none of the announced headers are found after
 // syncing, the peer is dropped.
-func (f *lightFetcher) checkSyncedHeaders(p *peer) {
-	f.peersLock.RLock()
+func (f *lightFetcher) checkSyncedHeaders(p *peer) (bool, []*types.Header, *big.Int) {
 	fp := f.peers[p]
-	f.peersLock.RUnlock()
 	if fp == nil {
 		p.Log().Debug("Unknown peer to check sync headers")
-		return
+		return false, nil, nil
 	}
 
 	var h *types.Header
@@ -762,10 +764,10 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 	if n == nil && !p.isTrusted {
 		p.Log().Debug("Synchronisation failed")
 		go f.pm.removePeer(p.id)
-	} else {
-		header := f.chain.GetHeader(n.hash, n.number)
-		f.newHeaders([]*types.Header{header}, []*big.Int{td})
+		return false, nil, nil
 	}
+	header := f.chain.GetHeader(n.hash, n.number)
+	return true, []*types.Header{header}, td
 }
 
 // lastValidTrieNode return last approved treeNode and a list of unapproved hashes
@@ -792,8 +794,6 @@ func (f *lightFetcher) setLastValidHeader(h *types.Header) {
 }
 
 func (f *lightFetcher) getLastValidHeader() *types.Header {
-	f.lock.Lock()
-	defer f.lock.Unlock()
 	return f.lastTrustedHeader
 }
 
@@ -830,8 +830,6 @@ func (f *lightFetcher) checkKnownNode(p *peer, n *fetcherTreeNode) bool {
 }
 
 func (f *lightFetcher) getMaxConfirmedTd() *big.Int {
-	f.maxConfirmedTdLock.RLock()
-	defer f.maxConfirmedTdLock.RUnlock()
 	return f.maxConfirmedTd
 }
 
@@ -885,9 +883,9 @@ type updateStatsEntry struct {
 func (f *lightFetcher) updateMaxConfirmedTd(td *big.Int) {
 	maxConfirmedTd := f.getMaxConfirmedTd()
 	if maxConfirmedTd == nil || td.Cmp(maxConfirmedTd) > 0 {
-		f.maxConfirmedTdLock.Lock()
+		f.lock.Lock()
 		f.maxConfirmedTd = td
-		f.maxConfirmedTdLock.Unlock()
+		f.lock.Unlock()
 		newEntry := &updateStatsEntry{
 			time: mclock.Now(),
 			td:   td,
@@ -895,7 +893,10 @@ func (f *lightFetcher) updateMaxConfirmedTd(td *big.Int) {
 		if f.lastUpdateStats != nil {
 			f.lastUpdateStats.next = newEntry
 		}
+
 		f.lastUpdateStats = newEntry
+		f.lock.Lock()
+		defer f.lock.Unlock()
 		for p := range f.peers {
 			f.checkUpdateStats(p, newEntry)
 		}
