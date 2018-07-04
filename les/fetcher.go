@@ -787,7 +787,10 @@ func (f *lightFetcher) lastTrustedTreeNode(p *peer) (*types.Header, []common.Has
 		canonical = f.chain.GetHeaderByNumber(f.lastTrustedHeader.Number.Uint64())
 	}
 	ancestorHash := rawdb.FindCommonAncestor(f.pm.chainDb, canonical, f.lastTrustedHeader).Hash()
-	for current != nil || current.Hash() != f.lastTrustedHeader.Hash() || current.Hash() != ancestorHash {
+	for current.Hash() != f.lastTrustedHeader.Hash() || current.Hash() != ancestorHash {
+		if current == nil {
+			break
+		}
 		if f.isTrustedHash(current.Hash()) {
 			break
 		}
