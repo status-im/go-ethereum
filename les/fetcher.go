@@ -427,7 +427,7 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForULC()
 	}
 
-	if bestTd == f.getMaxConfirmedTd() {
+	if bestTd == f.maxConfirmedTd {
 		return nil, 0
 	}
 
@@ -445,7 +445,7 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 
 // findBestValuesForLES retrieves the best values for LES mode.
 func (f *lightFetcher) findBestValuesForLES() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
-	bestTd = f.getMaxConfirmedTd()
+	bestTd = f.maxConfirmedTd
 	bestSyncing = false
 
 	for p, fp := range f.peers {
@@ -466,7 +466,7 @@ func (f *lightFetcher) findBestValuesForLES() (bestHash common.Hash, bestAmount 
 
 // findBestValuesForULC retrieves the best values for ULC mode.
 func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
-	bestTd = f.getMaxConfirmedTd()
+	bestTd = f.maxConfirmedTd
 	bestSyncing = false
 
 	for p, fp := range f.peers {
@@ -526,8 +526,8 @@ func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
 		},
 		request: func(dp distPeer) func() {
 			if f.pm.isULCEnabled() {
-				//keep last validated header before sync
-				f.setLastValidHeader(f.chain.CurrentHeader())
+				//keep last trusted header before sync
+				f.setLastTrustedHeader(f.chain.CurrentHeader())
 			}
 			go func() {
 				p := dp.(*peer)
@@ -734,7 +734,7 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) (bool, []*types.Header, *big.
 	if f.pm.isULCEnabled() {
 		var unapprovedHashes []common.Hash
 		// Overwrite last announced for ULC mode
-		h, unapprovedHashes = f.lastValidTrieNode(p)
+		h, unapprovedHashes = f.lastTrustedTreeNode(p)
 		//rollback untrusted blocks
 		f.chain.Rollback(unapprovedHashes)
 	}
@@ -754,7 +754,10 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) (bool, []*types.Header, *big.
 		}
 
 		//break if we found last trusted hash before sync
-		if n.hash == f.getLastValidHeader().Hash() {
+		if f.lastTrustedHeader == nil {
+			break
+		}
+		if n.hash == f.lastTrustedHeader.Hash() {
 			break
 		}
 		n = n.parent
@@ -770,31 +773,34 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) (bool, []*types.Header, *big.
 	return true, []*types.Header{header}, td
 }
 
-// lastValidTrieNode return last approved treeNode and a list of unapproved hashes
-func (f *lightFetcher) lastValidTrieNode(p *peer) (*types.Header, []common.Hash) {
+// lastTrustedTreeNode return last approved treeNode and a list of unapproved hashes
+func (f *lightFetcher) lastTrustedTreeNode(p *peer) (*types.Header, []common.Hash) {
 	unapprovedHashes := make([]common.Hash, 0)
-
 	current := f.chain.CurrentHeader()
-	for current != nil || current.Hash() != f.getLastValidHeader().Hash() {
+
+	if f.lastTrustedHeader == nil {
+		return current, unapprovedHashes
+	}
+
+	canonical := f.chain.CurrentHeader()
+	if canonical.Number.Uint64() > f.lastTrustedHeader.Number.Uint64() {
+		canonical = f.chain.GetHeaderByNumber(f.lastTrustedHeader.Number.Uint64())
+	}
+	ancestorHash := rawdb.FindCommonAncestor(f.pm.chainDb, canonical, f.lastTrustedHeader).Hash()
+	for current != nil || current.Hash() != f.lastTrustedHeader.Hash() || current.Hash() != ancestorHash {
 		if f.isTrustedHash(current.Hash()) {
 			break
 		}
 		unapprovedHashes = append(unapprovedHashes, current.Hash())
-		num := current.Number
-		num.Add(num, big.NewInt(-1))
-		current = f.chain.GetHeader(current.ParentHash, num.Uint64())
+		current = f.chain.GetHeader(current.ParentHash, current.Number.Uint64()-1)
 	}
 	return current, unapprovedHashes
 }
 
-func (f *lightFetcher) setLastValidHeader(h *types.Header) {
+func (f *lightFetcher) setLastTrustedHeader(h *types.Header) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	f.lastTrustedHeader = h
-}
-
-func (f *lightFetcher) getLastValidHeader() *types.Header {
-	return f.lastTrustedHeader
 }
 
 // checkKnownNode checks if a block tree node is known (downloaded and validated)
@@ -827,10 +833,6 @@ func (f *lightFetcher) checkKnownNode(p *peer, n *fetcherTreeNode) bool {
 		f.updateMaxConfirmedTd(fp.confirmedTd)
 	}
 	return n.known
-}
-
-func (f *lightFetcher) getMaxConfirmedTd() *big.Int {
-	return f.maxConfirmedTd
 }
 
 // deleteNode deletes a node and its child subtrees from a peer's block tree
@@ -881,7 +883,7 @@ type updateStatsEntry struct {
 // Those who have not confirmed such a head by now will be updated by a subsequent checkUpdateStats call with a
 // positive block delay value.
 func (f *lightFetcher) updateMaxConfirmedTd(td *big.Int) {
-	maxConfirmedTd := f.getMaxConfirmedTd()
+	maxConfirmedTd := f.maxConfirmedTd
 	if maxConfirmedTd == nil || td.Cmp(maxConfirmedTd) > 0 {
 		f.lock.Lock()
 		f.maxConfirmedTd = td
