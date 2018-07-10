@@ -786,11 +786,13 @@ func (f *lightFetcher) lastTrustedTreeNode(p *peer) (*types.Header, []common.Has
 	if canonical.Number.Uint64() > f.lastTrustedHeader.Number.Uint64() {
 		canonical = f.chain.GetHeaderByNumber(f.lastTrustedHeader.Number.Uint64())
 	}
-	ancestorHash := rawdb.FindCommonAncestor(f.pm.chainDb, canonical, f.lastTrustedHeader).Hash()
-	for current.Hash() != f.lastTrustedHeader.Hash() || current.Hash() != ancestorHash {
-		if current == nil {
-			break
-		}
+	commonAncestor := rawdb.FindCommonAncestor(f.pm.chainDb, canonical, f.lastTrustedHeader)
+	if commonAncestor == nil {
+		log.Error("Common ancestor of last trusted header and canonical header is nil", "canonical hash", canonical.Hash(), "trusted hash", f.lastTrustedHeader.Hash())
+		return current, unapprovedHashes
+	}
+
+	for f.isStopValidationTree(current, commonAncestor) == false {
 		if f.isTrustedHash(current.Hash()) {
 			break
 		}
@@ -798,6 +800,28 @@ func (f *lightFetcher) lastTrustedTreeNode(p *peer) (*types.Header, []common.Has
 		current = f.chain.GetHeader(current.ParentHash, current.Number.Uint64()-1)
 	}
 	return current, unapprovedHashes
+}
+
+//isStopValidationTree found when we should stop on finding last trusted header
+func (f *lightFetcher) isStopValidationTree(current *types.Header, commonAncestor *types.Header) bool {
+	if current == nil {
+		return true
+	}
+
+	currentHash := current.Hash()
+	ancestorHash := commonAncestor.Hash()
+
+	//found lastTrustedHeader
+	if currentHash == f.lastTrustedHeader.Hash() {
+		return true
+	}
+
+	//found common ancestor between lastTrustedHeader and
+	if current.Hash() == ancestorHash {
+		return true
+	}
+
+	return false
 }
 
 func (f *lightFetcher) setLastTrustedHeader(h *types.Header) {
