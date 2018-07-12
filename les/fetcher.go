@@ -792,7 +792,7 @@ func (f *lightFetcher) lastTrustedTreeNode(p *peer) (*types.Header, []common.Has
 		return current, unapprovedHashes
 	}
 
-	for f.isStopValidationTree(current, commonAncestor) == false {
+	for !f.isStopValidationTree(current, commonAncestor) {
 		if f.isTrustedHash(current.Hash()) {
 			break
 		}
