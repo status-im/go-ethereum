@@ -88,6 +88,7 @@ var (
 		utils.OnlyAnnounceModeFlag,
 		utils.ULCTrustedNodesFlag,
 		utils.ULCMinTrustedFractionFlag,
+		utils.ULCMinTrustedNodesNumFlag,
 		utils.SyncModeFlag,
 		utils.GCModeFlag,
 		utils.LightServFlag,

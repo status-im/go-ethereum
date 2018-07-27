@@ -51,12 +51,13 @@ type lightFetcher struct {
 	syncing         bool
 	syncDone        chan *peer
 
-	reqMu             sync.RWMutex // reqMu protects access to sent header fetch requests
-	requested         map[uint64]fetchRequest
-	deliverChn        chan fetchResponse
-	timeoutChn        chan uint64
-	requestChn        chan bool // true if initiated from outside
-	lastTrustedHeader *types.Header
+	reqMu                 sync.RWMutex // reqMu protects access to sent header fetch requests
+	requested             map[uint64]fetchRequest
+	deliverChn            chan fetchResponse
+	timeoutChn            chan uint64
+	requestChn            chan bool // true if initiated from outside
+	lastTrustedHeader     *types.Header
+	trustedBlockValidator TrustedValidator
 }
 
 // lightChain extends the BlockChain interface by locking.
@@ -127,6 +128,7 @@ func newLightFetcher(pm *ProtocolManager) *lightFetcher {
 		syncDone:       make(chan *peer),
 		maxConfirmedTd: big.NewInt(0),
 	}
+	f.trustedBlockValidator = &trustedPercentageValidator{fetcher: f}
 	pm.peers.notify(f)
 
 	f.pm.wg.Add(1)
@@ -295,7 +297,7 @@ func (f *lightFetcher) announce(p *peer, head *announceData) {
 		fp.nodeCnt = 0
 		fp.nodeByHash = make(map[common.Hash]*fetcherTreeNode)
 	}
-		// check if the node count is too high to add new nodes, discard oldest ones if necessary
+	// check if the node count is too high to add new nodes, discard oldest ones if necessary
 	if n != nil {
 		// n is now the reorg common ancestor, add a new branch of nodes
 		// check if the node count is too high to add new nodes
@@ -503,20 +505,7 @@ func (f *lightFetcher) isTrustedHash(hash common.Hash) bool {
 	if !f.pm.isULCEnabled() {
 		return true
 	}
-
-	var numAgreed int
-	for p, fp := range f.peers {
-		if !p.isTrusted {
-			continue
-		}
-		if _, ok := fp.nodeByHash[hash]; !ok {
-			continue
-		}
-
-		numAgreed = numAgreed + 1
-	}
-
-	return 100*numAgreed/len(f.pm.ulc.trustedKeys) >= f.pm.ulc.minTrustedFraction
+	return f.trustedBlockValidator.Validate(hash)
 }
 
 func (f *lightFetcher) newFetcherDistReqForSync(bestHash common.Hash) *distReq {
@@ -975,4 +964,29 @@ func (f *lightFetcher) checkUpdateStats(p *peer, newEntry *updateStatsEntry) {
 			fp.firstUpdateStats = fp.firstUpdateStats.next
 		}
 	}
+}
+
+//TrustedValidator check
+type TrustedValidator interface {
+	Validate(hash common.Hash) bool
+}
+
+type trustedPercentageValidator struct {
+	fetcher *lightFetcher
+}
+
+func (v *trustedPercentageValidator) Validate(hash common.Hash) bool {
+	var numAgreed int
+	for p, fp := range v.fetcher.peers {
+		if !p.isTrusted {
+			continue
+		}
+		if _, ok := fp.nodeByHash[hash]; !ok {
+			continue
+		}
+
+		numAgreed = numAgreed + 1
+	}
+
+	return 100*numAgreed/len(v.fetcher.pm.ulc.trustedKeys) >= v.fetcher.pm.ulc.minTrustedFraction && numAgreed >= v.fetcher.pm.ulc.minTrustedNodes
 }

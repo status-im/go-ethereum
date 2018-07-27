@@ -48,6 +48,7 @@ func TestFetcherULCPeerSelector(t *testing.T) {
 					id4.String(): {},
 				},
 				minTrustedFraction: 70,
+				minTrustedNodes:    2,
 			},
 		},
 		maxConfirmedTd: ftn1.td,
@@ -103,6 +104,7 @@ func TestFetcherULCPeerSelector(t *testing.T) {
 			},
 		},
 	}
+	lf.trustedBlockValidator = &trustedPercentageValidator{&lf}
 	bestHash, bestAmount, bestTD, sync := lf.findBestValuesForULC()
 
 	if bestTD == nil {
