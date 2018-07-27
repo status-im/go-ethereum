@@ -8,6 +8,7 @@ import (
 type ulc struct {
 	trustedKeys        map[string]struct{}
 	minTrustedFraction int
+	minTrustedNodes    int
 }
 
 func newULC(ulcConfig *eth.ULCConfig) *ulc {
@@ -24,7 +25,7 @@ func newULC(ulcConfig *eth.ULCConfig) *ulc {
 		m[node.ID.String()] = struct{}{}
 	}
 
-	return &ulc{m, ulcConfig.MinTrustedFraction}
+	return &ulc{m, ulcConfig.MinTrustedFraction, 1}
 }
 
 func (u *ulc) isTrusted(p discover.NodeID) bool {
