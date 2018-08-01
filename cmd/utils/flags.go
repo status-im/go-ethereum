@@ -182,7 +182,7 @@ var (
 	}
 	ULCTrustedNodesFlag = cli.StringFlag{
 		Name:  "les.trusted",
-		Usage: "Config file to use for ULC mode",
+		Usage: "List of trusted nodes",
 	}
 
 	defaultSyncMode = eth.DefaultConfig.SyncMode
