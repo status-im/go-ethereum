@@ -134,9 +134,9 @@ type serverPool struct {
 	knownSelect, newSelect             *weightedRandomSelect
 	knownSelected, newSelected         int
 	fastDiscover                       bool
-	connCh     chan *connReq
-	disconnCh  chan *disconnReq
-	registerCh chan *registerReq
+	connCh                             chan *connReq
+	disconnCh                          chan *disconnReq
+	registerCh                         chan *registerReq
 }
 
 // newServerPool creates a new serverPool instance

@@ -25,7 +25,7 @@ func newULC(ulcConfig *eth.ULCConfig) *ulc {
 		m[node.ID.String()] = struct{}{}
 	}
 
-	return &ulc{m, ulcConfig.MinTrustedFraction, 1}
+	return &ulc{m, ulcConfig.MinTrustedFraction, int(ulcConfig.MinTrustedNodesNum)}
 }
 
 func (u *ulc) isTrusted(p discover.NodeID) bool {
