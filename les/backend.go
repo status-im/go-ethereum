@@ -111,8 +111,12 @@ func New(ctx *node.ServiceContext, config *eth.Config) (*LightEthereum, error) {
 		bloomTrieIndexer: light.NewBloomTrieIndexer(chainDb, true),
 	}
 
+	var trustedNodes []string
+	if leth.config.ULC != nil {
+		trustedNodes = leth.config.ULC.TrustedServers
+	}
 	leth.relay = NewLesTxRelay(peers, leth.reqDist)
-	leth.serverPool = newServerPool(chainDb, quitSync, &leth.wg)
+	leth.serverPool = newServerPool(chainDb, quitSync, &leth.wg, trustedNodes)
 	leth.retriever = newRetrieveManager(peers, leth.reqDist, leth.serverPool)
 	leth.odr = NewLesOdr(chainDb, leth.chtIndexer, leth.bloomTrieIndexer, leth.bloomIndexer, leth.retriever)
 	if leth.blockchain, err = light.NewLightChain(leth.odr, leth.chainConfig, leth.engine); err != nil {
@@ -127,10 +131,32 @@ func New(ctx *node.ServiceContext, config *eth.Config) (*LightEthereum, error) {
 	}
 
 	leth.txPool = light.NewTxPool(leth.chainConfig, leth.blockchain, leth.relay)
-	if leth.protocolManager, err = NewProtocolManager(leth.chainConfig, true, ClientProtocolVersions, config.NetworkId, leth.eventMux, leth.engine, leth.peers, leth.blockchain, nil, chainDb, leth.odr, leth.relay, leth.serverPool, quitSync, &leth.wg); err != nil {
+
+	if leth.protocolManager, err = NewProtocolManager(
+		leth.chainConfig,
+		true,
+		ClientProtocolVersions,
+		config.NetworkId,
+		leth.eventMux,
+		leth.engine,
+		leth.peers,
+		leth.blockchain,
+		nil,
+		chainDb,
+		leth.odr,
+		leth.relay,
+		leth.serverPool,
+		quitSync,
+		&leth.wg,
+		config.ULC); err != nil {
 		return nil, err
 	}
+
+	if leth.protocolManager.isULCEnabled() {
+		leth.blockchain.DisableCheckFreq()
+	}
 	leth.ApiBackend = &LesApiBackend{leth, nil}
+
 	gpoParams := config.GPO
 	if gpoParams.Default == nil {
 		gpoParams.Default = config.GasPrice

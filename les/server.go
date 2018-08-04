@@ -46,13 +46,30 @@ type LesServer struct {
 	lesTopics       []discv5.Topic
 	privateKey      *ecdsa.PrivateKey
 	quitSync        chan struct{}
+	onlyAnnounce    bool
 
 	chtIndexer, bloomTrieIndexer *core.ChainIndexer
 }
 
 func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 	quitSync := make(chan struct{})
-	pm, err := NewProtocolManager(eth.BlockChain().Config(), false, ServerProtocolVersions, config.NetworkId, eth.EventMux(), eth.Engine(), newPeerSet(), eth.BlockChain(), eth.TxPool(), eth.ChainDb(), nil, nil, nil, quitSync, new(sync.WaitGroup))
+	pm, err := NewProtocolManager(
+		eth.BlockChain().Config(),
+		false,
+		ServerProtocolVersions,
+		config.NetworkId,
+		eth.EventMux(),
+		eth.Engine(),
+		newPeerSet(),
+		eth.BlockChain(),
+		eth.TxPool(),
+		eth.ChainDb(),
+		nil,
+		nil,
+		nil,
+		quitSync,
+		new(sync.WaitGroup),
+		config.ULC)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +86,9 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 		lesTopics:        lesTopics,
 		chtIndexer:       light.NewChtIndexer(eth.ChainDb(), false),
 		bloomTrieIndexer: light.NewBloomTrieIndexer(eth.ChainDb(), false),
+		onlyAnnounce:     config.OnlyAnnounce,
 	}
+
 	logger := log.New()
 
 	chtV1SectionCount, _, _ := srv.chtIndexer.Sections() // indexer still uses LES/1 4k section size for backwards server compatibility
@@ -285,10 +304,8 @@ func (s *requestCostStats) getCurrentList() RequestCostList {
 	defer s.lock.Unlock()
 
 	list := make(RequestCostList, len(reqList))
-	//fmt.Println("RequestCostList")
 	for idx, code := range reqList {
 		b, m := s.stats[code].calc()
-		//fmt.Println(code, s.stats[code].cnt, b/1000000, m/1000000)
 		if m < 0 {
 			b += m
 			m = 0

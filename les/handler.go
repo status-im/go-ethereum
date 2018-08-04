@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
@@ -124,12 +125,29 @@ type ProtocolManager struct {
 
 	// wait group is used for graceful shutdowns during downloading
 	// and processing
-	wg *sync.WaitGroup
+	wg  *sync.WaitGroup
+	ulc *ulc
 }
 
 // NewProtocolManager returns a new ethereum sub protocol manager. The Ethereum sub protocol manages peers capable
 // with the ethereum network.
-func NewProtocolManager(chainConfig *params.ChainConfig, lightSync bool, protocolVersions []uint, networkId uint64, mux *event.TypeMux, engine consensus.Engine, peers *peerSet, blockchain BlockChain, txpool txPool, chainDb ethdb.Database, odr *LesOdr, txrelay *LesTxRelay, serverPool *serverPool, quitSync chan struct{}, wg *sync.WaitGroup) (*ProtocolManager, error) {
+func NewProtocolManager(
+	chainConfig *params.ChainConfig,
+	lightSync bool,
+	protocolVersions []uint,
+	networkId uint64,
+	mux *event.TypeMux,
+	engine consensus.Engine,
+	peers *peerSet,
+	blockchain BlockChain,
+	txpool txPool,
+	chainDb ethdb.Database,
+	odr *LesOdr,
+	txrelay *LesTxRelay,
+	serverPool *serverPool,
+	quitSync chan struct{},
+	wg *sync.WaitGroup,
+	ulcConfig *eth.ULCConfig) (*ProtocolManager, error) {
 	// Create the protocol manager with the base fields
 	manager := &ProtocolManager{
 		lightSync:   lightSync,
@@ -151,6 +169,10 @@ func NewProtocolManager(chainConfig *params.ChainConfig, lightSync bool, protoco
 	if odr != nil {
 		manager.retriever = odr.retriever
 		manager.reqDist = odr.retriever.dist
+	}
+
+	if ulcConfig != nil {
+		manager.ulc = newULC(ulcConfig)
 	}
 
 	// Initiate a sub-protocol for every implemented version we can handle
@@ -257,7 +279,11 @@ func (pm *ProtocolManager) Stop() {
 }
 
 func (pm *ProtocolManager) newPeer(pv int, nv uint64, p *p2p.Peer, rw p2p.MsgReadWriter) *peer {
-	return newPeer(pv, nv, p, newMeteredMsgWriter(rw))
+	var isTrusted bool
+	if pm.isULCEnabled() {
+		isTrusted = pm.ulc.isTrusted(p.ID())
+	}
+	return newPeer(pv, nv, isTrusted, p, newMeteredMsgWriter(rw))
 }
 
 // handle is the callback invoked to manage the life cycle of a les peer. When
@@ -282,9 +308,11 @@ func (pm *ProtocolManager) handle(p *peer) error {
 		p.Log().Debug("Light Ethereum handshake failed", "err", err)
 		return err
 	}
+
 	if rw, ok := p.rw.(*meteredMsgReadWriter); ok {
 		rw.Init(p.version)
 	}
+
 	// Register the peer locally
 	if err := pm.peers.Register(p); err != nil {
 		p.Log().Error("Light Ethereum peer registration failed", "err", err)
@@ -296,6 +324,7 @@ func (pm *ProtocolManager) handle(p *peer) error {
 		}
 		pm.removePeer(p.id)
 	}()
+
 	// Register the peer in the downloader. If the downloader considers it banned, we disconnect
 	if pm.lightSync {
 		p.lock.Lock()
@@ -380,7 +409,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 	// Block header query, collect the requested headers and reply
 	case AnnounceMsg:
 		p.Log().Trace("Received announce message")
-		if p.requestAnnounceType == announceTypeNone {
+		if p.announceType == announceTypeNone {
 			return errResp(ErrUnexpectedResponse, "")
 		}
 
@@ -389,7 +418,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			return errResp(ErrDecode, "%v: %v", msg, err)
 		}
 
-		if p.requestAnnounceType == announceTypeSigned {
+		if p.announceType == announceTypeSigned {
 			if err := req.checkSignature(p.pubKey); err != nil {
 				p.Log().Trace("Invalid announcement signature", "err", err)
 				return err
@@ -1183,6 +1212,14 @@ func (pm *ProtocolManager) txStatus(hashes []common.Hash) []txStatus {
 	return stats
 }
 
+// isULCEnabled returns true if we can use ULC
+func (pm *ProtocolManager) isULCEnabled() bool {
+	if pm.ulc == nil || len(pm.ulc.trustedKeys) == 0 {
+		return false
+	}
+	return true
+}
+
 // NodeInfo represents a short summary of the Ethereum sub-protocol metadata
 // known about the host peer.
 type NodeInfo struct {
@@ -1251,7 +1288,8 @@ func (pc *peerConnection) RequestHeadersByNumber(origin uint64, amount int, skip
 			return peer.GetRequestCost(GetBlockHeadersMsg, amount)
 		},
 		canSend: func(dp distPeer) bool {
-			return dp.(*peer) == pc.peer
+			p := dp.(*peer)
+			return p == pc.peer
 		},
 		request: func(dp distPeer) func() {
 			peer := dp.(*peer)
@@ -1278,5 +1316,7 @@ func (d *downloaderPeerNotify) registerPeer(p *peer) {
 
 func (d *downloaderPeerNotify) unregisterPeer(p *peer) {
 	pm := (*ProtocolManager)(d)
-	pm.downloader.UnregisterPeer(p.id)
+	if pm.ulc == nil || p.isTrusted {
+		pm.downloader.UnregisterPeer(p.id)
+	}
 }
