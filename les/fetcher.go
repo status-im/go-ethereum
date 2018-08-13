@@ -74,7 +74,6 @@ type fetcherPeerInfo struct {
 	bestConfirmed       *fetcherTreeNode
 	nodeByHash          map[common.Hash]*fetcherTreeNode
 	firstUpdateStats    *updateStatsEntry
-	lock                sync.RWMutex
 }
 
 // fetcherTreeNode is a node of a tree that holds information about blocks recently
@@ -244,11 +243,11 @@ func (f *lightFetcher) unregisterPeer(p *peer) {
 	p.hasBlock = nil
 	p.lock.Unlock()
 
-	// check for potential timed out block delay statistics
-	f.checkUpdateStats(p, nil)
-
 	f.lock.Lock()
 	defer f.lock.Unlock()
+
+	// check for potential timed out block delay statistics
+	f.checkUpdateStats(p, nil)
 	delete(f.peers, p)
 }
 
@@ -501,7 +500,7 @@ func (f *lightFetcher) isTrustedHash(hash common.Hash) bool {
 			continue
 		}
 
-		numAgreed = numAgreed + 1
+		numAgreed++
 	}
 
 	return 100*numAgreed/len(f.pm.ulc.trustedKeys) >= f.pm.ulc.minTrustedFraction
@@ -901,8 +900,7 @@ type updateStatsEntry struct {
 // Those who have not confirmed such a head by now will be updated by a subsequent checkUpdateStats call with a
 // positive block delay value.
 func (f *lightFetcher) updateMaxConfirmedTd(td *big.Int) {
-	maxConfirmedTd := f.maxConfirmedTd
-	if maxConfirmedTd == nil || td.Cmp(maxConfirmedTd) > 0 {
+	if f.maxConfirmedTd == nil || td.Cmp(f.maxConfirmedTd) > 0 {
 		f.maxConfirmedTd = td
 		newEntry := &updateStatsEntry{
 			time: mclock.Now(),
@@ -934,9 +932,6 @@ func (f *lightFetcher) checkUpdateStats(p *peer, newEntry *updateStatsEntry) {
 		p.Log().Debug("Unknown peer to check update stats")
 		return
 	}
-
-	fp.lock.Lock()
-	defer fp.lock.Unlock()
 
 	if newEntry != nil && fp.firstUpdateStats == nil {
 		fp.firstUpdateStats = newEntry
