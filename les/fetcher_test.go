@@ -103,7 +103,7 @@ func TestFetcherULCPeerSelector(t *testing.T) {
 			},
 		},
 	}
-	bestHash, bestAmount, bestTD, sync := lf.findBestValuesForULC()
+	bestHash, bestAmount, bestTD, sync := lf.findBestValues()
 
 	if bestTD == nil {
 		t.Fatal("Empty result")

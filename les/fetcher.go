@@ -419,11 +419,7 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 		bestTd      *big.Int
 		bestSyncing bool
 	)
-	if !f.pm.isULCEnabled() {
-		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForLES()
-	} else {
-		bestHash, bestAmount, bestTd, bestSyncing = f.findBestValuesForULC()
-	}
+	bestHash, bestAmount, bestTd, bestSyncing = f.findBestValues()
 
 	if bestTd == f.maxConfirmedTd {
 		return nil, 0
@@ -441,29 +437,8 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 	return rq, reqID
 }
 
-// findBestValuesForLES retrieves the best values for LES mode.
-func (f *lightFetcher) findBestValuesForLES() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
-	bestTd = f.maxConfirmedTd
-	bestSyncing = false
-
-	for p, fp := range f.peers {
-		for hash, n := range fp.nodeByHash {
-			if !f.checkKnownNode(p, n) && !n.requested && (bestTd == nil || n.td.Cmp(bestTd) >= 0) {
-				amount := f.requestAmount(p, n)
-				if bestTd == nil || n.td.Cmp(bestTd) > 0 || amount < bestAmount {
-					bestHash = hash
-					bestAmount = amount
-					bestTd = n.td
-					bestSyncing = fp.bestConfirmed == nil || fp.root == nil || !f.checkKnownNode(p, fp.root)
-				}
-			}
-		}
-	}
-	return
-}
-
-// findBestValuesForULC retrieves the best values for ULC mode.
-func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
+// findBestValues retrieves the best values for LES or ULC mode.
+func (f *lightFetcher) findBestValues() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
 	bestTd = f.maxConfirmedTd
 	bestSyncing = false
 
@@ -473,8 +448,9 @@ func (f *lightFetcher) findBestValuesForULC() (bestHash common.Hash, bestAmount 
 				continue
 			}
 
+			//if ulc mode is disabled, isTrustedHash returns true
 			amount := f.requestAmount(p, n)
-			if (bestTd == nil || n.td.Cmp(bestTd) > 0) && f.isTrustedHash(hash) {
+			if (bestTd == nil || n.td.Cmp(bestTd) > 0 || amount < bestAmount) && f.isTrustedHash(hash) {
 				bestHash = hash
 				bestTd = n.td
 				bestAmount = amount
