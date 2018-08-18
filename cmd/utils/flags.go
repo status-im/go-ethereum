@@ -169,7 +169,6 @@ var (
 	ULCMinTrustedFractionFlag = cli.IntFlag{
 		Name:  "les.mintrustedfraction",
 		Usage: "LES server sends only announce",
-		Value: eth.DefaultUTCMinTrustedFraction,
 	}
 	ULCTrustedNodesFlag = cli.StringFlag{
 		Name:  "les.trusted",
