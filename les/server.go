@@ -38,17 +38,15 @@ import (
 )
 
 type LesServer struct {
-	config          *eth.Config
-	protocolManager *ProtocolManager
-	fcManager       *flowcontrol.ClientManager // nil if our node is client only
-	fcCostStats     *requestCostStats
-	defParams       *flowcontrol.ServerParams
-	lesTopics       []discv5.Topic
-	privateKey      *ecdsa.PrivateKey
-	quitSync        chan struct{}
-	onlyAnnounce    bool
+	lesCommons
 
-	chtIndexer, bloomTrieIndexer *core.ChainIndexer
+	fcManager    *flowcontrol.ClientManager // nil if our node is client only
+	fcCostStats  *requestCostStats
+	defParams    *flowcontrol.ServerParams
+	lesTopics    []discv5.Topic
+	privateKey   *ecdsa.PrivateKey
+	quitSync     chan struct{}
+	onlyAnnounce bool
 }
 
 func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
@@ -56,7 +54,6 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 	pm, err := NewProtocolManager(
 		eth.BlockChain().Config(),
 		false,
-		ServerProtocolVersions,
 		config.NetworkId,
 		eth.EventMux(),
 		eth.Engine(),
@@ -80,13 +77,16 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 	}
 
 	srv := &LesServer{
-		config:           config,
-		protocolManager:  pm,
-		quitSync:         quitSync,
-		lesTopics:        lesTopics,
-		chtIndexer:       light.NewChtIndexer(eth.ChainDb(), false, nil),
-		bloomTrieIndexer: light.NewBloomTrieIndexer(eth.ChainDb(), false, nil),
-		onlyAnnounce:     config.OnlyAnnounce,
+		lesCommons: lesCommons{
+			config:           config,
+			chainDb:          eth.ChainDb(),
+			chtIndexer:       light.NewChtIndexer(eth.ChainDb(), false, nil),
+			bloomTrieIndexer: light.NewBloomTrieIndexer(eth.ChainDb(), false, nil),
+			protocolManager:  pm,
+		},
+		quitSync:     quitSync,
+		lesTopics:    lesTopics,
+		onlyAnnounce: config.OnlyAnnounce,
 	}
 
 	logger := log.New()
@@ -123,7 +123,7 @@ func NewLesServer(eth *eth.Ethereum, config *eth.Config) (*LesServer, error) {
 }
 
 func (s *LesServer) Protocols() []p2p.Protocol {
-	return s.protocolManager.SubProtocols
+	return s.makeProtocols(ServerProtocolVersions)
 }
 
 // Start starts the LES server
