@@ -35,8 +35,11 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		Etherbase               common.Address `toml:",omitempty"`
 		MinerNotify             []string       `toml:",omitempty"`
 		MinerExtraData          hexutil.Bytes  `toml:",omitempty"`
+		MinerGasFloor           uint64
+		MinerGasCeil            uint64
 		MinerGasPrice           *big.Int
 		MinerRecommit           time.Duration
+		MinerNoverify           bool
 		Ethash                  ethash.Config
 		TxPool                  core.TxPoolConfig
 		GPO                     gasprice.Config
@@ -60,8 +63,11 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.Etherbase = c.Etherbase
 	enc.MinerNotify = c.MinerNotify
 	enc.MinerExtraData = c.MinerExtraData
+	enc.MinerGasFloor = c.MinerGasFloor
+	enc.MinerGasCeil = c.MinerGasCeil
 	enc.MinerGasPrice = c.MinerGasPrice
 	enc.MinerRecommit = c.MinerRecommit
+	enc.MinerNoverify = c.MinerNoverify
 	enc.Ethash = c.Ethash
 	enc.TxPool = c.TxPool
 	enc.GPO = c.GPO
@@ -90,8 +96,11 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		Etherbase               *common.Address `toml:",omitempty"`
 		MinerNotify             []string        `toml:",omitempty"`
 		MinerExtraData          *hexutil.Bytes  `toml:",omitempty"`
+		MinerGasFloor           *uint64
+		MinerGasCeil            *uint64
 		MinerGasPrice           *big.Int
 		MinerRecommit           *time.Duration
+		MinerNoverify           *bool
 		Ethash                  *ethash.Config
 		TxPool                  *core.TxPoolConfig
 		GPO                     *gasprice.Config
@@ -150,11 +159,20 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	if dec.MinerExtraData != nil {
 		c.MinerExtraData = *dec.MinerExtraData
 	}
+	if dec.MinerGasFloor != nil {
+		c.MinerGasFloor = *dec.MinerGasFloor
+	}
+	if dec.MinerGasCeil != nil {
+		c.MinerGasCeil = *dec.MinerGasCeil
+	}
 	if dec.MinerGasPrice != nil {
 		c.MinerGasPrice = dec.MinerGasPrice
 	}
 	if dec.MinerRecommit != nil {
 		c.MinerRecommit = *dec.MinerRecommit
+	}
+	if dec.MinerNoverify != nil {
+		c.MinerNoverify = *dec.MinerNoverify
 	}
 	if dec.Ethash != nil {
 		c.Ethash = *dec.Ethash

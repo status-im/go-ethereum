@@ -105,6 +105,7 @@ var (
 		utils.MinerNotifyFlag,
 		utils.MinerGasTargetFlag,
 		utils.MinerLegacyGasTargetFlag,
+		utils.MinerGasLimitFlag,
 		utils.MinerGasPriceFlag,
 		utils.MinerLegacyGasPriceFlag,
 		utils.MinerEtherbaseFlag,
@@ -112,6 +113,7 @@ var (
 		utils.MinerExtraDataFlag,
 		utils.MinerLegacyExtraDataFlag,
 		utils.MinerRecommitIntervalFlag,
+		utils.MinerNoVerfiyFlag,
 		utils.NATFlag,
 		utils.NoDiscoverFlag,
 		utils.DiscoveryV5Flag,
@@ -132,6 +134,8 @@ var (
 		utils.NoCompactionFlag,
 		utils.GpoBlocksFlag,
 		utils.GpoPercentileFlag,
+		utils.EWASMInterpreterFlag,
+		utils.EVMInterpreterFlag,
 		configFileFlag,
 	}
 
@@ -153,6 +157,7 @@ var (
 		utils.WhisperEnabledFlag,
 		utils.WhisperMaxMessageSizeFlag,
 		utils.WhisperMinPOWFlag,
+		utils.WhisperRestrictConnectionBetweenLightClientsFlag,
 	}
 
 	metricsFlags = []cli.Flag{
@@ -239,7 +244,6 @@ func init() {
 		// Start system runtime metrics collection
 		go metrics.CollectProcessMetrics(3 * time.Second)
 
-		utils.SetupNetwork(ctx)
 		return nil
 	}
 
