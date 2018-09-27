@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -ex
-
 # Default behaviour:
 # Reverts all patches in patch dir, notes down the ones
 # which were previously applied. Applies all from the beginning
