@@ -14,23 +14,25 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package enr
+package mru
 
 import (
-	"crypto/ecdsa"
-	"math/big"
 	"testing"
 )
 
-// Checks that failure to sign leaves the record unmodified.
-func TestSignError(t *testing.T) {
-	invalidKey := &ecdsa.PrivateKey{D: new(big.Int), PublicKey: *pubkey}
+func getTestQuery() *Query {
+	ul := getTestID()
+	return &Query{
+		TimeLimit: 5000,
+		View:      ul.View,
+		Hint:      ul.Epoch,
+	}
+}
 
-	var r Record
-	if err := SignV4(&r, invalidKey); err == nil {
-		t.Fatal("expected error from SignV4")
-	}
-	if len(r.pairs) > 0 {
-		t.Fatal("expected empty record, have", r.pairs)
-	}
+func TestQueryValues(t *testing.T) {
+	var expected = KV{"hint.level": "25", "hint.time": "1000", "time": "5000", "topic": "0x776f726c64206e657773207265706f72742c20657665727920686f7572000000", "user": "0x876A8936A7Cd0b79Ef0735AD0896c1AFe278781c"}
+
+	query := getTestQuery()
+	testValueSerializer(t, query, expected)
+
 }
