@@ -402,7 +402,6 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		if p.announceType == announceTypeNone {
 			return errResp(ErrUnexpectedResponse, "")
 		}
-
 		var req announceData
 		if err := msg.Decode(&req); err != nil {
 			return errResp(ErrDecode, "%v: %v", msg, err)

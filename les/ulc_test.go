@@ -6,20 +6,22 @@ import (
 	"testing"
 	"time"
 
+	"net"
+
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/discover"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 )
 
 func TestULCSyncWithOnePeer(t *testing.T) {
 	f := newFullPeerPair(t, 1, 4, testChainGen)
 	ulcConfig := &eth.ULCConfig{
 		MinTrustedFraction: 100,
-		TrustedServers:     []string{f.ID.String()},
+		TrustedServers:     []string{f.Node.String()},
 	}
 
 	l := newLightPeer(t, ulcConfig)
@@ -46,13 +48,16 @@ func TestULCReceiveAnnounce(t *testing.T) {
 	f := newFullPeerPair(t, 1, 4, testChainGen)
 	ulcConfig := &eth.ULCConfig{
 		MinTrustedFraction: 100,
-		TrustedServers:     []string{f.ID.String()},
+		TrustedServers:     []string{f.Node.String()},
 	}
 
 	key, err := crypto.GenerateKey()
-	ID := discover.PubkeyID(&key.PublicKey)
+	if err != nil {
+		t.Fatal("generate key err:", err)
+	}
+
 	l := newLightPeer(t, ulcConfig)
-	l.ID = ID
+	l.Node = enode.NewV4(&key.PublicKey, net.IP{}, 35000, 35000)
 
 	fPeer, lPeer, err := connectPeers(f, l, 2)
 	if err != nil {
@@ -88,11 +93,11 @@ func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
 	f1 := newFullPeerPair(t, 1, 4, testChainGen)
 	f2 := newFullPeerPair(t, 2, 0, nil)
 	ulcConf := &ulc{minTrustedFraction: 100, trustedKeys: make(map[string]struct{})}
-	ulcConf.trustedKeys[f1.ID.String()] = struct{}{}
-	ulcConf.trustedKeys[f2.ID.String()] = struct{}{}
+	ulcConf.trustedKeys[f1.Node.ID().String()] = struct{}{}
+	ulcConf.trustedKeys[f2.Node.ID().String()] = struct{}{}
 	ulcConfig := &eth.ULCConfig{
 		MinTrustedFraction: 100,
-		TrustedServers:     []string{f1.ID.String(), f2.ID.String()},
+		TrustedServers:     []string{f1.Node.String(), f2.Node.String()},
 	}
 	l := newLightPeer(t, ulcConfig)
 	l.PM.ulc.minTrustedFraction = 100
@@ -120,11 +125,11 @@ func TestULCShouldNotSyncWithThreePeersOneHaveEmptyChain(t *testing.T) {
 	f2 := newFullPeerPair(t, 2, 4, testChainGen)
 	f3 := newFullPeerPair(t, 3, 0, nil)
 	ulcConf := &ulc{minTrustedFraction: 60, trustedKeys: make(map[string]struct{})}
-	ulcConf.trustedKeys[f1.ID.String()] = struct{}{}
-	ulcConf.trustedKeys[f2.ID.String()] = struct{}{}
+	ulcConf.trustedKeys[f1.Node.ID().String()] = struct{}{}
+	ulcConf.trustedKeys[f2.Node.ID().String()] = struct{}{}
 	ulcConfig := &eth.ULCConfig{
 		MinTrustedFraction: 60,
-		TrustedServers:     []string{f1.ID.String(), f2.ID.String()},
+		TrustedServers:     []string{f1.Node.String(), f2.Node.String()},
 	}
 	l := newLightPeer(t, ulcConfig)
 	l.PM.ulc.minTrustedFraction = 60
@@ -157,7 +162,7 @@ func TestULCShouldNotSyncWithThreePeersOneHaveEmptyChain(t *testing.T) {
 
 type pairPeer struct {
 	Name string
-	ID   discover.NodeID
+	Node *enode.Node
 	PM   *ProtocolManager
 }
 
@@ -165,8 +170,8 @@ func connectPeers(full, light pairPeer, version int) (*peer, *peer, error) {
 	// Create a message pipe to communicate through
 	app, net := p2p.MsgPipe()
 
-	peerLight := full.PM.newPeer(version, NetworkId, p2p.NewPeer(light.ID, light.Name, nil), net)
-	peerFull := light.PM.newPeer(version, NetworkId, p2p.NewPeer(full.ID, full.Name, nil), app)
+	peerLight := full.PM.newPeer(version, NetworkId, p2p.NewPeer(light.Node.ID(), light.Name, nil), net)
+	peerFull := light.PM.newPeer(version, NetworkId, p2p.NewPeer(full.Node.ID(), full.Name, nil), app)
 
 	// Start the peerLight on a new thread
 	errc1 := make(chan error, 1)
@@ -213,8 +218,8 @@ func newFullPeerPair(t *testing.T, index int, numberOfblocks int, chainGen func(
 	if err != nil {
 		t.Fatal("generate key err:", err)
 	}
-	ID := discover.PubkeyID(&key.PublicKey)
-	peerPairFull.ID = ID
+
+	peerPairFull.Node = enode.NewV4(&key.PublicKey, net.ParseIP("127.0.0.1"), 35000, 35000)
 	return peerPairFull
 }
 
@@ -237,9 +242,7 @@ func newLightPeer(t *testing.T, ulcConfig *eth.ULCConfig) pairPeer {
 	if err != nil {
 		t.Fatal("generate key err:", err)
 	}
-	ID := discover.PubkeyID(&key.PublicKey)
-
-	peerPairLight.ID = ID
+	peerPairLight.Node = enode.NewV4(&key.PublicKey, net.IP{}, 35000, 35000)
 
 	return peerPairLight
 }

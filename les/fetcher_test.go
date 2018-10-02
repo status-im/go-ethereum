@@ -1,28 +1,26 @@
 package les
 
 import (
-	"crypto/rand"
 	"math/big"
 	"testing"
 
+	"net"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/discover"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 )
 
 func TestFetcherULCPeerSelector(t *testing.T) {
 
 	var (
-		id1 discover.NodeID
-		id2 discover.NodeID
-		id3 discover.NodeID
-		id4 discover.NodeID
+		id1 enode.ID = newNodeID(t).ID()
+		id2 enode.ID = newNodeID(t).ID()
+		id3 enode.ID = newNodeID(t).ID()
+		id4 enode.ID = newNodeID(t).ID()
 	)
-	rand.Read(id1[:])
-	rand.Read(id2[:])
-	rand.Read(id3[:])
-	rand.Read(id4[:])
 
 	ftn1 := &fetcherTreeNode{
 		hash: common.HexToHash("1"),
@@ -146,4 +144,12 @@ func (l *lightChainStub) GetTd(hash common.Hash, number uint64) *big.Int {
 
 func (l *lightChainStub) InsertHeaderChain(chain []*types.Header, checkFreq int) (int, error) {
 	return l.insertHeaderChainAssertFunc(chain, checkFreq)
+}
+
+func newNodeID(t *testing.T) *enode.Node {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal("generate key err:", err)
+	}
+	return enode.NewV4(&key.PublicKey, net.IP{}, 35000, 35000)
 }

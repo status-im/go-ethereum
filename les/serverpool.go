@@ -478,23 +478,23 @@ func (pool *serverPool) loadNodes() {
 	}
 
 	for _, trusted := range pool.parseTrustedServers() {
-		e := pool.findOrNewNode(trusted.ID, trusted.IP, trusted.TCP)
+		e := pool.findOrNewNode(trusted)
 		e.trusted = true
-		e.dialed = &poolEntryAddress{ip: trusted.IP, port: trusted.TCP}
-		pool.entries[e.id] = e
+		e.dialed = &poolEntryAddress{ip: trusted.IP(), port: uint16(trusted.TCP())}
+		pool.entries[e.node.ID()] = e
 		pool.trustedQueue.setLatest(e)
 	}
 
 }
 
 // parseTrustedServers returns valid and parsed by discovery enodes.
-func (pool *serverPool) parseTrustedServers() []*discover.Node {
-	nodes := make([]*discover.Node, 0, len(pool.trustedNodes))
+func (pool *serverPool) parseTrustedServers() []*enode.Node {
+	nodes := make([]*enode.Node, 0, len(pool.trustedNodes))
 
-	for _, enode := range pool.trustedNodes {
-		node, err := discover.ParseNode(enode)
+	for _, node := range pool.trustedNodes {
+		node, err := enode.ParseV4(node)
 		if err != nil {
-			log.Warn("Trusted node URL invalid", "enode", enode, "err", err)
+			log.Warn("Trusted node URL invalid", "enode", node, "err", err)
 			continue
 		}
 		nodes = append(nodes, node)
@@ -613,7 +613,7 @@ func (pool *serverPool) dial(entry *poolEntry, knownSelected bool) {
 	if entry.trusted {
 		state = "trusted"
 	}
-	log.Debug("Dialing new peer", "lesaddr", entry.id.String()+"@"+entry.dialed.strKey(), "set", len(entry.addr), state, knownSelected)
+	log.Debug("Dialing new peer", "lesaddr", entry.node.ID().String()+"@"+entry.dialed.strKey(), "set", len(entry.addr), state, knownSelected)
 
 	go func() {
 		pool.server.AddPeer(entry.node)

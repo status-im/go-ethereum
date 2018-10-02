@@ -1,14 +1,13 @@
 package les
 
 import (
-	"crypto/rand"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/les/flowcontrol"
 	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/discover"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -26,8 +25,8 @@ var (
 
 //ulc connects to trusted peer and send announceType=announceTypeSigned
 func TestPeerHandshakeSetAnnounceTypeToAnnounceTypeSignedForTrustedPeer(t *testing.T) {
-	var id discover.NodeID
-	rand.Read(id[:])
+
+	var id enode.ID = newNodeID(t).ID()
 
 	//peer to connect(on ulc side)
 	p := peer{
@@ -75,8 +74,7 @@ func TestPeerHandshakeSetAnnounceTypeToAnnounceTypeSignedForTrustedPeer(t *testi
 }
 
 func TestPeerHandshakeAnnounceTypeSignedForTrustedPeersPeerNotInTrusted(t *testing.T) {
-	var id discover.NodeID
-	rand.Read(id[:])
+	var id enode.ID = newNodeID(t).ID()
 	p := peer{
 		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
 		version: protocol_version,
@@ -120,8 +118,7 @@ func TestPeerHandshakeAnnounceTypeSignedForTrustedPeersPeerNotInTrusted(t *testi
 }
 
 func TestPeerHandshakeDefaultAllRequests(t *testing.T) {
-	var id discover.NodeID
-	rand.Read(id[:])
+	var id enode.ID = newNodeID(t).ID()
 
 	s := generateLesServer()
 
@@ -150,8 +147,7 @@ func TestPeerHandshakeDefaultAllRequests(t *testing.T) {
 }
 
 func TestPeerHandshakeServerSendOnlyAnnounceRequestsHeaders(t *testing.T) {
-	var id discover.NodeID
-	rand.Read(id[:])
+	var id enode.ID = newNodeID(t).ID()
 
 	s := generateLesServer()
 	s.onlyAnnounce = true
@@ -185,8 +181,7 @@ func TestPeerHandshakeServerSendOnlyAnnounceRequestsHeaders(t *testing.T) {
 	}
 }
 func TestPeerHandshakeClientReceiveOnlyAnnounceRequestsHeaders(t *testing.T) {
-	var id discover.NodeID
-	rand.Read(id[:])
+	var id enode.ID = newNodeID(t).ID()
 
 	p := peer{
 		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
@@ -217,8 +212,7 @@ func TestPeerHandshakeClientReceiveOnlyAnnounceRequestsHeaders(t *testing.T) {
 }
 
 func TestPeerHandshakeClientReturnErrorOnUselessPeer(t *testing.T) {
-	var id discover.NodeID
-	rand.Read(id[:])
+	var id enode.ID = newNodeID(t).ID()
 
 	p := peer{
 		Peer:    p2p.NewPeer(id, "test peer", []p2p.Cap{}),
