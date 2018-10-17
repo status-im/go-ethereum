@@ -63,8 +63,15 @@ func TestULCReceiveAnnounce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	l.PM.peers.lock.Lock()
+	t.Log("peer list1", len(l.PM.peers.peers))
+	l.PM.peers.lock.Unlock()
 
 	l.PM.synchronise(fPeer)
+
+	l.PM.peers.lock.Lock()
+	t.Log("peer list2", len(l.PM.peers.peers))
+	l.PM.peers.lock.Unlock()
 
 	//check that the sync is finished correctly
 	if !reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
