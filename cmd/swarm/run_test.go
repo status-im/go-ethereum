@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -39,7 +40,12 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/swarm"
+	"github.com/ethereum/go-ethereum/swarm/api"
+	swarmhttp "github.com/ethereum/go-ethereum/swarm/api/http"
+	"github.com/ethereum/go-ethereum/swarm/testutil"
 )
+
+var loglevel = flag.Int("loglevel", 3, "verbosity of logs")
 
 func init() {
 	// Run the app if we've been exec'd as "swarm-test" in runSwarm.
@@ -52,6 +58,9 @@ func init() {
 	})
 }
 
+func serverFunc(api *api.API) testutil.TestServer {
+	return swarmhttp.NewServer(api, "")
+}
 func TestMain(m *testing.M) {
 	// check if we have been reexec'd
 	if reexec.Init() {
