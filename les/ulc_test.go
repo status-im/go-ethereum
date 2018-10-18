@@ -15,6 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"crypto/ecdsa"
+	"math/big"
 )
 
 func TestULCSyncWithOnePeer(t *testing.T) {
@@ -51,27 +53,13 @@ func TestULCReceiveAnnounce(t *testing.T) {
 		TrustedServers:     []string{f.Node.String()},
 	}
 
-	key, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal("generate key err:", err)
-	}
-
 	l := newLightPeer(t, ulcConfig)
-	l.Node = enode.NewV4(&key.PublicKey, net.IP{}, 35000, 35000)
-
 	fPeer, lPeer, err := connectPeers(f, l, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l.PM.peers.lock.Lock()
-	t.Log("peer list1", len(l.PM.peers.peers))
-	l.PM.peers.lock.Unlock()
 
 	l.PM.synchronise(fPeer)
-
-	l.PM.peers.lock.Lock()
-	t.Log("peer list2", len(l.PM.peers.peers))
-	l.PM.peers.lock.Unlock()
 
 	//check that the sync is finished correctly
 	if !reflect.DeepEqual(f.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
@@ -84,10 +72,17 @@ func TestULCReceiveAnnounce(t *testing.T) {
 	}
 	l.PM.peers.lock.Unlock()
 
+	time.Sleep(time.Second)
 	//send a signed announce message(payload doesn't matter)
-	announce := announceData{}
-	announce.sign(key)
+	td:=f.PM.blockchain.GetTd(l.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Number.Uint64())
+	announce := announceData{
+		Number:l.PM.blockchain.CurrentHeader().Number.Uint64()+1,
+		Td:td.Add(td,big.NewInt(1)),
+	}
+	announce.sign(f.Key)
+
 	lPeer.SendAnnounce(announce)
+	time.Sleep(time.Millisecond)
 
 	l.PM.peers.lock.Lock()
 	if len(l.PM.peers.peers) == 0 {
@@ -171,6 +166,7 @@ type pairPeer struct {
 	Name string
 	Node *enode.Node
 	PM   *ProtocolManager
+	Key  *ecdsa.PrivateKey
 }
 
 func connectPeers(full, light pairPeer, version int) (*peer, *peer, error) {
@@ -225,7 +221,7 @@ func newFullPeerPair(t *testing.T, index int, numberOfblocks int, chainGen func(
 	if err != nil {
 		t.Fatal("generate key err:", err)
 	}
-
+	peerPairFull.Key=key
 	peerPairFull.Node = enode.NewV4(&key.PublicKey, net.ParseIP("127.0.0.1"), 35000, 35000)
 	return peerPairFull
 }
@@ -249,7 +245,7 @@ func newLightPeer(t *testing.T, ulcConfig *eth.ULCConfig) pairPeer {
 	if err != nil {
 		t.Fatal("generate key err:", err)
 	}
+	peerPairLight.Key=key
 	peerPairLight.Node = enode.NewV4(&key.PublicKey, net.IP{}, 35000, 35000)
-
 	return peerPairLight
 }
