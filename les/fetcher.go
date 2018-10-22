@@ -156,6 +156,7 @@ func (f *lightFetcher) syncLoop() {
 			if !f.syncing && !(newAnnounce && s) {
 				rq, reqID = f.nextRequest()
 			}
+
 			syncing := f.syncing
 			f.lock.Unlock()
 
@@ -457,7 +458,7 @@ func (f *lightFetcher) findBestValues() (bestHash common.Hash, bestAmount uint64
 
 			//if ulc mode is disabled, isTrustedHash returns true
 			amount := f.requestAmount(p, n)
-			if (bestTd == nil || n.td.Cmp(bestTd) > 0 || amount < bestAmount) && f.isTrustedHash(hash) {
+			if (bestTd == nil || n.td.Cmp(bestTd) > 0 || amount < bestAmount) && (f.isTrustedHash(hash) || f.maxConfirmedTd.Int64() == 0) {
 				bestHash = hash
 				bestTd = n.td
 				bestAmount = amount

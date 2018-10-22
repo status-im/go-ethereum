@@ -123,23 +123,21 @@ func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
 }
 
 func TestULCShouldNotSyncWithThreePeersOneHaveEmptyChain(t *testing.T) {
-	f1 := newFullPeerPair(t, 1, 4, testChainGen)
+	f1 := newFullPeerPair(t, 1, 3, testChainGen)
 	f2 := newFullPeerPair(t, 2, 4, testChainGen)
 	f3 := newFullPeerPair(t, 3, 0, nil)
-	ulcConf := &ulc{minTrustedFraction: 60, trustedKeys: make(map[string]struct{})}
-	ulcConf.trustedKeys[f1.Node.ID().String()] = struct{}{}
-	ulcConf.trustedKeys[f2.Node.ID().String()] = struct{}{}
+
 	ulcConfig := &eth.ULCConfig{
 		MinTrustedFraction: 60,
-		TrustedServers:     []string{f1.Node.String(), f2.Node.String()},
+		TrustedServers:     []string{f1.Node.String(), f2.Node.String(), f3.Node.String()},
 	}
-	l := newLightPeer(t, ulcConfig)
-	l.PM.ulc.minTrustedFraction = 60
 
+	l := newLightPeer(t, ulcConfig)
 	_, _, err := connectPeers(f1, l, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	_, _, err = connectPeers(f2, l, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -155,9 +153,6 @@ func TestULCShouldNotSyncWithThreePeersOneHaveEmptyChain(t *testing.T) {
 	l.PM.fetcher.lock.Unlock()
 
 	if !reflect.DeepEqual(f1.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
-		t.Fatal("Incorrect hash")
-	}
-	if !reflect.DeepEqual(f2.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
 		t.Fatal("Incorrect hash")
 	}
 }

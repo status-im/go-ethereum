@@ -462,27 +462,30 @@ func (pool *serverPool) loadNodes() {
 	}
 	var list []*poolEntry
 	err = rlp.DecodeBytes(enc, &list)
-	if err != nil {
+	if err == nil {
+		for _, e := range list {
+			log.Debug("Loaded server stats", "id", e.node.ID(), "fails", e.lastConnected.fails,
+				"conn", fmt.Sprintf("%v/%v", e.connectStats.avg, e.connectStats.weight),
+				"delay", fmt.Sprintf("%v/%v", time.Duration(e.delayStats.avg), e.delayStats.weight),
+				"response", fmt.Sprintf("%v/%v", time.Duration(e.responseStats.avg), e.responseStats.weight),
+				"timeout", fmt.Sprintf("%v/%v", e.timeoutStats.avg, e.timeoutStats.weight))
+			pool.entries[e.node.ID()] = e
+			pool.knownQueue.setLatest(e)
+			pool.knownSelect.update((*knownEntry)(e))
+		}
+	} else {
 		log.Debug("Failed to decode node list", "err", err)
-		return
-	}
-	for _, e := range list {
-		log.Debug("Loaded server stats", "id", e.node.ID(), "fails", e.lastConnected.fails,
-			"conn", fmt.Sprintf("%v/%v", e.connectStats.avg, e.connectStats.weight),
-			"delay", fmt.Sprintf("%v/%v", time.Duration(e.delayStats.avg), e.delayStats.weight),
-			"response", fmt.Sprintf("%v/%v", time.Duration(e.responseStats.avg), e.responseStats.weight),
-			"timeout", fmt.Sprintf("%v/%v", e.timeoutStats.avg, e.timeoutStats.weight))
-		pool.entries[e.node.ID()] = e
-		pool.knownQueue.setLatest(e)
-		pool.knownSelect.update((*knownEntry)(e))
 	}
 
-	for _, trusted := range pool.parseTrustedServers() {
-		e := pool.findOrNewNode(trusted)
-		e.trusted = true
-		e.dialed = &poolEntryAddress{ip: trusted.IP(), port: uint16(trusted.TCP())}
-		pool.entries[e.node.ID()] = e
-		pool.trustedQueue.setLatest(e)
+	//connect to trusted nodes
+	if len(pool.trustedNodes) > 0 {
+		for _, trusted := range pool.parseTrustedServers() {
+			e := pool.findOrNewNode(trusted)
+			e.trusted = true
+			e.dialed = &poolEntryAddress{ip: trusted.IP(), port: uint16(trusted.TCP())}
+			pool.entries[e.node.ID()] = e
+			pool.trustedQueue.setLatest(e)
+		}
 	}
 
 }
