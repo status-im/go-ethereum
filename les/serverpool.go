@@ -171,6 +171,7 @@ func (pool *serverPool) start(server *p2p.Server, topic discv5.Topic) {
 	pool.dbKey = append([]byte("serverPool/"), []byte(topic)...)
 	pool.wg.Add(1)
 	pool.loadNodes()
+	pool.connectToTrustedNodes()
 
 	if pool.server.DiscV5 != nil {
 		pool.discSetPeriod = make(chan time.Duration, 1)
@@ -462,21 +463,23 @@ func (pool *serverPool) loadNodes() {
 	}
 	var list []*poolEntry
 	err = rlp.DecodeBytes(enc, &list)
-	if err == nil {
-		for _, e := range list {
-			log.Debug("Loaded server stats", "id", e.node.ID(), "fails", e.lastConnected.fails,
-				"conn", fmt.Sprintf("%v/%v", e.connectStats.avg, e.connectStats.weight),
-				"delay", fmt.Sprintf("%v/%v", time.Duration(e.delayStats.avg), e.delayStats.weight),
-				"response", fmt.Sprintf("%v/%v", time.Duration(e.responseStats.avg), e.responseStats.weight),
-				"timeout", fmt.Sprintf("%v/%v", e.timeoutStats.avg, e.timeoutStats.weight))
-			pool.entries[e.node.ID()] = e
-			pool.knownQueue.setLatest(e)
-			pool.knownSelect.update((*knownEntry)(e))
-		}
-	} else {
+	if err != nil {
 		log.Debug("Failed to decode node list", "err", err)
+		return
 	}
+	for _, e := range list {
+		log.Debug("Loaded server stats", "id", e.node.ID(), "fails", e.lastConnected.fails,
+			"conn", fmt.Sprintf("%v/%v", e.connectStats.avg, e.connectStats.weight),
+			"delay", fmt.Sprintf("%v/%v", time.Duration(e.delayStats.avg), e.delayStats.weight),
+			"response", fmt.Sprintf("%v/%v", time.Duration(e.responseStats.avg), e.responseStats.weight),
+			"timeout", fmt.Sprintf("%v/%v", e.timeoutStats.avg, e.timeoutStats.weight))
+		pool.entries[e.node.ID()] = e
+		pool.knownQueue.setLatest(e)
+		pool.knownSelect.update((*knownEntry)(e))
+	}
+}
 
+func (pool *serverPool) connectToTrustedNodes() {
 	//connect to trusted nodes
 	if len(pool.trustedNodes) > 0 {
 		for _, trusted := range pool.parseTrustedServers() {
@@ -487,7 +490,6 @@ func (pool *serverPool) loadNodes() {
 			pool.trustedQueue.setLatest(e)
 		}
 	}
-
 }
 
 // parseTrustedServers returns valid and parsed by discovery enodes.
