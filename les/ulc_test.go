@@ -9,6 +9,8 @@ import (
 	"net"
 
 	"crypto/ecdsa"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
@@ -16,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"math/big"
 )
 
 func TestULCSyncWithOnePeer(t *testing.T) {
