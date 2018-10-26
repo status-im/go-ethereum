@@ -29,6 +29,7 @@ import (
 	mapset "github.com/deckarep/golang-set"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -88,6 +89,10 @@ type Whisper struct {
 	stats   Statistics // Statistics of whisper node
 
 	mailServer MailServer // MailServer interface
+
+	envelopeFeed event.Feed
+
+	timeSource func() time.Time // source of time for whisper
 }
 
 // New creates a Whisper client ready to communicate through the Ethereum P2P network.
@@ -106,6 +111,7 @@ func New(cfg *Config) *Whisper {
 		p2pMsgQueue:   make(chan *Envelope, messageQueueLimit),
 		quit:          make(chan struct{}),
 		syncAllowance: DefaultSyncAllowance,
+		timeSource:    cfg.TimeSource,
 	}
 
 	whisper.filters = NewFilters(whisper)
@@ -131,6 +137,12 @@ func New(cfg *Config) *Whisper {
 	}
 
 	return whisper
+}
+
+// SubscribeEnvelopeEvents subscribes to envelopes feed.
+// In order to prevent blocking whisper producers events must be amply buffered.
+func (whisper *Whisper) SubscribeEnvelopeEvents(events chan<- EnvelopeEvent) event.Subscription {
+	return whisper.envelopeFeed.Subscribe(events)
 }
 
 // MinPow returns the PoW value required by this node.
@@ -204,6 +216,11 @@ func (whisper *Whisper) APIs() []rpc.API {
 			Public:    true,
 		},
 	}
+}
+
+// GetCurrentTime returns current time.
+func (whisper *Whisper) GetCurrentTime() time.Time {
+	return whisper.timeSource()
 }
 
 // RegisterServer registers MailServer interface.
@@ -408,9 +425,9 @@ func (whisper *Whisper) NewKeyPair() (string, error) {
 		return "", fmt.Errorf("failed to generate valid key")
 	}
 
-	id, err := GenerateRandomID()
+	id, err := toDeterministicID(common.ToHex(crypto.FromECDSAPub(&key.PublicKey)), keyIDSize)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate ID: %s", err)
+		return "", err
 	}
 
 	whisper.keyMu.Lock()
@@ -425,11 +442,16 @@ func (whisper *Whisper) NewKeyPair() (string, error) {
 
 // DeleteKeyPair deletes the specified key if it exists.
 func (whisper *Whisper) DeleteKeyPair(key string) bool {
+	deterministicID, err := toDeterministicID(key, keyIDSize)
+	if err != nil {
+		return false
+	}
+
 	whisper.keyMu.Lock()
 	defer whisper.keyMu.Unlock()
 
-	if whisper.privateKeys[key] != nil {
-		delete(whisper.privateKeys, key)
+	if whisper.privateKeys[deterministicID] != nil {
+		delete(whisper.privateKeys, deterministicID)
 		return true
 	}
 	return false
@@ -437,31 +459,73 @@ func (whisper *Whisper) DeleteKeyPair(key string) bool {
 
 // AddKeyPair imports a asymmetric private key and returns it identifier.
 func (whisper *Whisper) AddKeyPair(key *ecdsa.PrivateKey) (string, error) {
-	id, err := GenerateRandomID()
+	id, err := makeDeterministicID(common.ToHex(crypto.FromECDSAPub(&key.PublicKey)), keyIDSize)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate ID: %s", err)
+		return "", err
+	}
+	if whisper.HasKeyPair(id) {
+		return id, nil // no need to re-inject
 	}
 
 	whisper.keyMu.Lock()
 	whisper.privateKeys[id] = key
 	whisper.keyMu.Unlock()
+	log.Info("Whisper identity added", "id", id, "pubkey", common.ToHex(crypto.FromECDSAPub(&key.PublicKey)))
 
 	return id, nil
+}
+
+// SelectKeyPair adds cryptographic identity, and makes sure
+// that it is the only private key known to the node.
+func (whisper *Whisper) SelectKeyPair(key *ecdsa.PrivateKey) error {
+	id, err := makeDeterministicID(common.ToHex(crypto.FromECDSAPub(&key.PublicKey)), keyIDSize)
+	if err != nil {
+		return err
+	}
+
+	whisper.keyMu.Lock()
+	defer whisper.keyMu.Unlock()
+
+	whisper.privateKeys = make(map[string]*ecdsa.PrivateKey) // reset key store
+	whisper.privateKeys[id] = key
+
+	log.Info("Whisper identity selected", "id", id, "key", common.ToHex(crypto.FromECDSAPub(&key.PublicKey)))
+	return nil
+}
+
+// DeleteKeyPairs removes all cryptographic identities known to the node
+func (whisper *Whisper) DeleteKeyPairs() error {
+	whisper.keyMu.Lock()
+	defer whisper.keyMu.Unlock()
+
+	whisper.privateKeys = make(map[string]*ecdsa.PrivateKey)
+
+	return nil
 }
 
 // HasKeyPair checks if the whisper node is configured with the private key
 // of the specified public pair.
 func (whisper *Whisper) HasKeyPair(id string) bool {
+	deterministicID, err := toDeterministicID(id, keyIDSize)
+	if err != nil {
+		return false
+	}
+
 	whisper.keyMu.RLock()
 	defer whisper.keyMu.RUnlock()
-	return whisper.privateKeys[id] != nil
+	return whisper.privateKeys[deterministicID] != nil
 }
 
 // GetPrivateKey retrieves the private key of the specified identity.
 func (whisper *Whisper) GetPrivateKey(id string) (*ecdsa.PrivateKey, error) {
+	deterministicID, err := toDeterministicID(id, keyIDSize)
+	if err != nil {
+		return nil, err
+	}
+
 	whisper.keyMu.RLock()
 	defer whisper.keyMu.RUnlock()
-	key := whisper.privateKeys[id]
+	key := whisper.privateKeys[deterministicID]
 	if key == nil {
 		return nil, fmt.Errorf("invalid id")
 	}
@@ -491,6 +555,23 @@ func (whisper *Whisper) GenerateSymKey() (string, error) {
 	}
 	whisper.symKeys[id] = key
 	return id, nil
+}
+
+// AddSymKey stores the key with a given id.
+func (whisper *Whisper) AddSymKey(id string, key []byte) (string, error) {
+	deterministicID, err := toDeterministicID(id, keyIDSize)
+	if err != nil {
+		return "", err
+	}
+
+	whisper.keyMu.Lock()
+	defer whisper.keyMu.Unlock()
+
+	if whisper.symKeys[deterministicID] != nil {
+		return "", fmt.Errorf("key already exists: %v", id)
+	}
+	whisper.symKeys[deterministicID] = key
+	return deterministicID, nil
 }
 
 // AddSymKeyDirect stores the key, and returns its id.
@@ -773,7 +854,7 @@ func (whisper *Whisper) runMessageLoop(p *Peer, rw p2p.MsgReadWriter) error {
 // appropriate time-stamp. In case of error, connection should be dropped.
 // param isP2P indicates whether the message is peer-to-peer (should not be forwarded).
 func (whisper *Whisper) add(envelope *Envelope, isP2P bool) (bool, error) {
-	now := uint32(time.Now().Unix())
+	now := uint32(whisper.timeSource().Unix())
 	sent := envelope.Expiry - envelope.TTL
 
 	if sent > now {
@@ -916,13 +997,17 @@ func (whisper *Whisper) expire() {
 	whisper.statsMu.Lock()
 	defer whisper.statsMu.Unlock()
 	whisper.stats.reset()
-	now := uint32(time.Now().Unix())
+	now := uint32(whisper.timeSource().Unix())
 	for expiry, hashSet := range whisper.expirations {
 		if expiry < now {
 			// Dump all expired messages and remove timestamp
 			hashSet.Each(func(v interface{}) bool {
 				sz := whisper.envelopes[v.(common.Hash)].size()
 				delete(whisper.envelopes, v.(common.Hash))
+				whisper.envelopeFeed.Send(EnvelopeEvent{
+					Hash:  v.(common.Hash),
+					Event: EventEnvelopeExpired,
+				})
 				whisper.stats.messagesCleared++
 				whisper.stats.memoryCleared += sz
 				whisper.stats.memoryUsed -= sz
@@ -1039,6 +1124,33 @@ func GenerateRandomID() (id string, err error) {
 	return id, err
 }
 
+// makeDeterministicID generates a deterministic ID, based on a given input
+func makeDeterministicID(input string, keyLen int) (id string, err error) {
+	buf := pbkdf2.Key([]byte(input), nil, 4096, keyLen, sha256.New)
+	if !validateDataIntegrity(buf, keyIDSize) {
+		return "", fmt.Errorf("error in GenerateDeterministicID: failed to generate key")
+	}
+	id = common.Bytes2Hex(buf)
+	return id, err
+}
+
+// toDeterministicID reviews incoming id, and transforms it to format
+// expected internally be private key store. Originally, public keys
+// were used as keys, now random keys are being used. And in order to
+// make it easier to consume, we now allow both random IDs and public
+// keys to be passed.
+func toDeterministicID(id string, expectedLen int) (string, error) {
+	if len(id) != (expectedLen * 2) { // we received hex key, so number of chars in id is doubled
+		var err error
+		id, err = makeDeterministicID(id, expectedLen)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return id, nil
+}
+
 func isFullNode(bloom []byte) bool {
 	if bloom == nil {
 		return true
@@ -1073,4 +1185,16 @@ func addBloom(a, b []byte) []byte {
 		c[i] = a[i] | b[i]
 	}
 	return c
+}
+
+// SelectedKeyPairID returns the id of currently selected key pair.
+// It helps distinguish between different users w/o exposing the user identity itself.
+func (whisper *Whisper) SelectedKeyPairID() string {
+	whisper.keyMu.RLock()
+	defer whisper.keyMu.RUnlock()
+
+	for id := range whisper.privateKeys {
+		return id
+	}
+	return ""
 }
