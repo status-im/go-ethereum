@@ -216,11 +216,8 @@ func (f *lightFetcher) syncLoop() {
 		case p := <-f.syncDone:
 			f.lock.Lock()
 			p.Log().Debug("Done synchronising with peer")
-			res, h, td := f.checkSyncedHeaders(p)
+			f.checkSyncedHeaders(p)
 			f.syncing = false
-			if res {
-				f.newHeaders([]*types.Header{h}, []*big.Int{td})
-			}
 			f.lock.Unlock()
 		}
 	}
@@ -694,14 +691,14 @@ func (f *lightFetcher) checkAnnouncedHeaders(fp *fetcherPeerInfo, headers []*typ
 	}
 }
 
-// checkSyncedHeaders updates peer's block tree after synchronisation by marking
+// §ncedHeaders updates peer's block tree after synchronisation by marking
 // downloaded headers as known. If none of the announced headers are found after
 // syncing, the peer is dropped.
-func (f *lightFetcher) checkSyncedHeaders(p *peer) (bool, *types.Header, *big.Int) {
+func (f *lightFetcher) checkSyncedHeaders(p *peer) {
 	fp := f.peers[p]
 	if fp == nil {
 		p.Log().Debug("Unknown peer to check sync headers")
-		return false, nil, nil
+		return
 	}
 
 	n := fp.lastAnnounced
@@ -730,10 +727,10 @@ func (f *lightFetcher) checkSyncedHeaders(p *peer) (bool, *types.Header, *big.In
 	if n == nil {
 		p.Log().Debug("Synchronisation failed")
 		go f.pm.removePeer(p.id)
-		return false, nil, nil
+		return
 	}
 	header := f.chain.GetHeader(n.hash, n.number)
-	return true, header, td
+	f.newHeaders([]*types.Header{header}, []*big.Int{td})
 }
 
 // lastTrustedTreeNode return last approved treeNode and a list of unapproved hashes
