@@ -118,7 +118,7 @@ func TestULCShouldNotSyncWithTwoPeersOneHaveEmptyChain(t *testing.T) {
 	l.PM.fetcher.nextRequest()
 	l.PM.fetcher.lock.Unlock()
 
-	if reflect.DeepEqual(f1.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
+	if reflect.DeepEqual(f2.PM.blockchain.CurrentHeader().Hash(), l.PM.blockchain.CurrentHeader().Hash()) {
 		t.Fatal("Incorrect hash: second peer has empty chain")
 	}
 }
