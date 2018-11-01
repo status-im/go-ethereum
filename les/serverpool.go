@@ -159,7 +159,7 @@ func newServerPool(db ethdb.Database, quit chan struct{}, wg *sync.WaitGroup, tr
 		trustedNodes: trustedNodes,
 	}
 
-	pool.trustedQueue = newPoolEntryQueue(maxKnownEntries, nil)
+	pool.trustedQueue = newPoolEntryQueue(maxKnownEntries, pool.removeEntry)
 	pool.knownQueue = newPoolEntryQueue(maxKnownEntries, pool.removeEntry)
 	pool.newQueue = newPoolEntryQueue(maxNewEntries, pool.removeEntry)
 	return pool
@@ -485,7 +485,6 @@ func (pool *serverPool) connectToTrustedNodes() {
 		for _, trusted := range pool.parseTrustedServers() {
 			e := pool.findOrNewNode(trusted)
 			e.trusted = true
-			e.dialed = &poolEntryAddress{ip: trusted.IP(), port: uint16(trusted.TCP())}
 			pool.entries[e.node.ID()] = e
 			pool.trustedQueue.setLatest(e)
 		}
@@ -889,7 +888,7 @@ func (q *poolEntryQueue) setLatest(entry *poolEntry) {
 	if q.queue[entry.queueIdx] == entry {
 		delete(q.queue, entry.queueIdx)
 	} else {
-		if len(q.queue) == q.maxCnt && q.removeFromPool != nil {
+		if len(q.queue) == q.maxCnt {
 			e := q.fetchOldest()
 			q.remove(e)
 			q.removeFromPool(e)
