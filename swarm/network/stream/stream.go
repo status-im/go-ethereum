@@ -18,6 +18,7 @@ package stream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -66,8 +67,9 @@ type Registry struct {
 // RegistryOptions holds optional values for NewRegistry constructor.
 type RegistryOptions struct {
 	SkipCheck       bool
-	DoSync          bool
-	DoRetrieve      bool
+	DoSync          bool // Sets if the server syncs with peers. Default is true, set to false by lightnode or nosync flags.
+	DoRetrieve      bool // Sets if the server issues Retrieve requests. Default is true.
+	DoServeRetrieve bool // Sets if the server serves Retrieve requests. Default is true, set to false by lightnode flag.
 	SyncUpdateDelay time.Duration
 	MaxPeerServers  int // The limit of servers for each peer in registry
 }
@@ -93,14 +95,24 @@ func NewRegistry(localID enode.ID, delivery *Delivery, syncChunkStore storage.Sy
 	}
 	streamer.api = NewAPI(streamer)
 	delivery.getPeer = streamer.getPeer
-	streamer.RegisterServerFunc(swarmChunkServerStreamName, func(_ *Peer, _ string, _ bool) (Server, error) {
-		return NewSwarmChunkServer(delivery.chunkStore), nil
-	})
+
+	if options.DoServeRetrieve {
+		streamer.RegisterServerFunc(swarmChunkServerStreamName, func(_ *Peer, _ string, live bool) (Server, error) {
+			if !live {
+				return nil, errors.New("only live retrieval requests supported")
+			}
+			return NewSwarmChunkServer(delivery.chunkStore), nil
+		})
+	}
+
 	streamer.RegisterClientFunc(swarmChunkServerStreamName, func(p *Peer, t string, live bool) (Client, error) {
 		return NewSwarmSyncerClient(p, syncChunkStore, NewStream(swarmChunkServerStreamName, t, live))
 	})
-	RegisterSwarmSyncerServer(streamer, syncChunkStore)
-	RegisterSwarmSyncerClient(streamer, syncChunkStore)
+
+	if options.DoSync {
+		RegisterSwarmSyncerServer(streamer, syncChunkStore)
+		RegisterSwarmSyncerClient(streamer, syncChunkStore)
+	}
 
 	if options.DoSync {
 		// latestIntC function ensures that
@@ -271,7 +283,6 @@ func (r *Registry) Subscribe(peerId enode.ID, s Stream, h *Range, priority uint8
 	if err != nil {
 		return err
 	}
-
 	if s.Live && h != nil {
 		if err := peer.setClientParams(
 			getHistoryStream(s),
@@ -478,8 +489,13 @@ func (p *Peer) HandleMsg(ctx context.Context, msg interface{}) error {
 	case *WantedHashesMsg:
 		return p.handleWantedHashesMsg(ctx, msg)
 
-	case *ChunkDeliveryMsg:
-		return p.streamer.delivery.handleChunkDeliveryMsg(ctx, p, msg)
+	case *ChunkDeliveryMsgRetrieval:
+		//handling chunk delivery is the same for retrieval and syncing, so let's cast the msg
+		return p.streamer.delivery.handleChunkDeliveryMsg(ctx, p, ((*ChunkDeliveryMsg)(msg)))
+
+	case *ChunkDeliveryMsgSyncing:
+		//handling chunk delivery is the same for retrieval and syncing, so let's cast the msg
+		return p.streamer.delivery.handleChunkDeliveryMsg(ctx, p, ((*ChunkDeliveryMsg)(msg)))
 
 	case *RetrieveRequestMsg:
 		return p.streamer.delivery.handleRetrieveRequestMsg(ctx, p, msg)
@@ -670,7 +686,7 @@ func (c *clientParams) clientCreated() {
 // Spec is the spec of the streamer protocol
 var Spec = &protocols.Spec{
 	Name:       "stream",
-	Version:    7,
+	Version:    8,
 	MaxMsgSize: 10 * 1024 * 1024,
 	Messages: []interface{}{
 		UnsubscribeMsg{},
@@ -679,10 +695,11 @@ var Spec = &protocols.Spec{
 		TakeoverProofMsg{},
 		SubscribeMsg{},
 		RetrieveRequestMsg{},
-		ChunkDeliveryMsg{},
+		ChunkDeliveryMsgRetrieval{},
 		SubscribeErrorMsg{},
 		RequestSubscriptionMsg{},
 		QuitMsg{},
+		ChunkDeliveryMsgSyncing{},
 	},
 }
 
