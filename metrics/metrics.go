@@ -21,6 +21,10 @@ import (
 // for less cluttered pprof profiles.
 var Enabled bool = false
 
+// EnabledStr has the same function as Enabled but
+// it can be set during compilation (linking) time.
+var EnabledStr = "false"
+
 // MetricsEnabledFlag is the CLI flag name to use to enable metrics collections.
 const MetricsEnabledFlag = "metrics"
 const DashboardEnabledFlag = "dashboard"
@@ -34,6 +38,11 @@ func init() {
 			log.Info("Enabling metrics collection")
 			Enabled = true
 		}
+	}
+
+	if v, err := strconv.ParseBool(EnabledStr); err == nil && v {
+		log.Info("Enabling metrics collection")
+		Enabled = v
 	}
 }
 
