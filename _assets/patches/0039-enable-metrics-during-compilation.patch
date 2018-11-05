@@ -1,0 +1,27 @@
+diff --git a/metrics/metrics.go b/metrics/metrics.go
+index d4d703dfe..83d7205e2 100644
+--- a/metrics/metrics.go
++++ b/metrics/metrics.go
+@@ -21,6 +21,10 @@ import (
+ // for less cluttered pprof profiles.
+ var Enabled bool = false
+ 
++// EnabledStr has the same function as Enabled but
++// it can be set during compilation (linking) time.
++var EnabledStr = "false"
++
+ // MetricsEnabledFlag is the CLI flag name to use to enable metrics collections.
+ const MetricsEnabledFlag = "metrics"
+ const DashboardEnabledFlag = "dashboard"
+@@ -35,6 +39,11 @@ func init() {
+ 			Enabled = true
+ 		}
+ 	}
++
++	if v, err := strconv.ParseBool(EnabledStr); err == nil && v {
++		log.Info("Enabling metrics collection")
++		Enabled = v
++	}
+ }
+ 
+ // CollectProcessMetrics periodically collects various metrics about the running
