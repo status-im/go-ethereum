@@ -424,7 +424,7 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 		bestTd      *big.Int
 		bestSyncing bool
 	)
-	bestHash, bestAmount, bestTd, bestSyncing = f.findBestValues()
+	bestHash, bestAmount, bestTd, bestSyncing = f.findBestRequest()
 
 	if bestTd == f.maxConfirmedTd {
 		return nil, 0
@@ -442,8 +442,10 @@ func (f *lightFetcher) nextRequest() (*distReq, uint64) {
 	return rq, reqID
 }
 
-// findBestValues retrieves the best values for LES or ULC mode.
-func (f *lightFetcher) findBestValues() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
+// findBestRequest finds the best head to request that has been announced by but not yet requested from a known peer.
+// It also returns the announced Td (which should be verified after fetching the head),
+// the necessary amount to request and whether a downloader sync is necessary instead of a normal header request.
+func (f *lightFetcher) findBestRequest() (bestHash common.Hash, bestAmount uint64, bestTd *big.Int, bestSyncing bool) {
 	bestTd = f.maxConfirmedTd
 	bestSyncing = false
 
@@ -691,7 +693,7 @@ func (f *lightFetcher) checkAnnouncedHeaders(fp *fetcherPeerInfo, headers []*typ
 	}
 }
 
-// §ncedHeaders updates peer's block tree after synchronisation by marking
+// checkSyncedHeaders updates peer's block tree after synchronisation by marking
 // downloaded headers as known. If none of the announced headers are found after
 // syncing, the peer is dropped.
 func (f *lightFetcher) checkSyncedHeaders(p *peer) {

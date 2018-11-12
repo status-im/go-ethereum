@@ -1254,8 +1254,7 @@ func (pc *peerConnection) RequestHeadersByNumber(origin uint64, amount int, skip
 			return peer.GetRequestCost(GetBlockHeadersMsg, amount)
 		},
 		canSend: func(dp distPeer) bool {
-			p := dp.(*peer)
-			return p == pc.peer
+			return dp.(*peer) == pc.peer
 		},
 		request: func(dp distPeer) func() {
 			peer := dp.(*peer)
@@ -1282,7 +1281,5 @@ func (d *downloaderPeerNotify) registerPeer(p *peer) {
 
 func (d *downloaderPeerNotify) unregisterPeer(p *peer) {
 	pm := (*ProtocolManager)(d)
-	if pm.ulc == nil || p.isTrusted {
-		pm.downloader.UnregisterPeer(p.id)
-	}
+	pm.downloader.UnregisterPeer(p.id)
 }

@@ -174,21 +174,6 @@ var (
 		Name:  "ulc.trusted",
 		Usage: "List of trusted ULC servers",
 	}
-		Name:  "les.ulcconfig",
-		Usage: "Config file to use for ULC mode",
-	}
-	OnlyAnnounceModeFlag = cli.BoolFlag{
-		Name:  "les.onlyannounce",
-		Usage: "LES server sends only announce",
-	}
-	ULCMinTrustedFractionFlag = cli.IntFlag{
-		Name:  "les.mintrustedfraction",
-		Usage: "LES server sends only announce",
-	}
-	ULCTrustedNodesFlag = cli.StringFlag{
-		Name:  "les.trusted",
-		Usage: "List of trusted nodes",
-	}
 
 	defaultSyncMode = eth.DefaultConfig.SyncMode
 	SyncModeFlag    = TextMarshalerFlag{
@@ -878,8 +863,8 @@ func SetULC(ctx *cli.Context, cfg *eth.Config) {
 		cfg.ULC.MinTrustedFraction = trustedFraction
 	}
 	if cfg.ULC.MinTrustedFraction <= 0 && cfg.ULC.MinTrustedFraction > 100 {
-		log.Error("MinTrustedFraction is invalid", "MinTrustedFraction", cfg.ULC.MinTrustedFraction, "Changed to default", eth.DefaultUTCMinTrustedFraction)
-		cfg.ULC.MinTrustedFraction = eth.DefaultUTCMinTrustedFraction
+		log.Error("MinTrustedFraction is invalid", "MinTrustedFraction", cfg.ULC.MinTrustedFraction, "Changed to default", eth.DefaultULCMinTrustedFraction)
+		cfg.ULC.MinTrustedFraction = eth.DefaultULCMinTrustedFraction
 	}
 }
 

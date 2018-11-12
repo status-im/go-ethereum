@@ -1,6 +1,6 @@
 package eth
 
-const DefaultUTCMinTrustedFraction = 75
+const DefaultULCMinTrustedFraction = 75
 
 // ULCConfig is a Ultra Light client options.
 type ULCConfig struct {
