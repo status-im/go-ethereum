@@ -327,6 +327,28 @@ func (srv *Server) RemovePeer(node *enode.Node) {
 	}
 }
 
+// DeletePeer deletes the given node forcefully.
+func (srv *Server) DeletePeer(node *enode.Node) error {
+	var peer *Peer
+	for _, p := range srv.Peers() {
+		if p.ID() == node.ID() {
+			peer = p
+			break
+		}
+	}
+
+	if peer == nil {
+		return errors.New("peer not found")
+	}
+
+	select {
+	case srv.delpeer <- peerDrop{peer, errors.New("forced delete"), true}:
+	case <-srv.quit:
+	}
+
+	return nil
+}
+
 // AddTrustedPeer adds the given node to a reserved whitelist which allows the
 // node to always connect, even if the slot are full.
 func (srv *Server) AddTrustedPeer(node *enode.Node) {
