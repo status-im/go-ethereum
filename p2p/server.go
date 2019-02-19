@@ -341,7 +341,7 @@ func (srv *Server) DeletePeer(node *enode.Node) error {
 
 	if peer == nil {
 		err := errors.New("peer not found")
-		srv.log.Info("DeletePeer failed to match a peer", "err", err)
+		srv.log.Info("DeletePeer failed to match a peer", "peerID", node.ID().String(), "err", err)
 		return err
 	}
 
@@ -350,7 +350,7 @@ func (srv *Server) DeletePeer(node *enode.Node) error {
 	case <-srv.quit:
 	}
 
-	srv.log.Info("DeletePeer passed the request to delpeer channel")
+	srv.log.Info("DeletePeer passed the request to delpeer channel", "peerID", node.ID().String())
 
 	return nil
 }
