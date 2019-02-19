@@ -329,7 +329,9 @@ func (srv *Server) RemovePeer(node *enode.Node) {
 
 // DeletePeer deletes the given node forcefully.
 func (srv *Server) DeletePeer(node *enode.Node) error {
-	srv.log.Info("DeletePeer called", "peerID", node.ID().String())
+	peerIDStr := node.ID().String()
+
+	srv.log.Info("DeletePeer called", "peerID", peerIDStr)
 
 	var peer *Peer
 	for _, p := range srv.Peers() {
@@ -341,7 +343,7 @@ func (srv *Server) DeletePeer(node *enode.Node) error {
 
 	if peer == nil {
 		err := errors.New("peer not found")
-		srv.log.Info("DeletePeer failed to match a peer", "peerID", node.ID().String(), "err", err)
+		srv.log.Info("DeletePeer failed to match a peer", "peerID", peerIDStr, "err", err)
 		return err
 	}
 
@@ -350,7 +352,7 @@ func (srv *Server) DeletePeer(node *enode.Node) error {
 	case <-srv.quit:
 	}
 
-	srv.log.Info("DeletePeer passed the request to delpeer channel", "peerID", node.ID().String())
+	srv.log.Info("DeletePeer passed the request to delpeer channel", "peerID", peerIDStr)
 
 	return nil
 }
