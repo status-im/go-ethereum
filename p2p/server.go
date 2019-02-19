@@ -329,6 +329,10 @@ func (srv *Server) RemovePeer(node *enode.Node) {
 
 // DeletePeer deletes the given node forcefully.
 func (srv *Server) DeletePeer(node *enode.Node) error {
+	peerIDStr := node.ID().String()
+
+	srv.log.Info("DeletePeer called", "peerID", peerIDStr)
+
 	var peer *Peer
 	for _, p := range srv.Peers() {
 		if p.ID() == node.ID() {
@@ -338,13 +342,17 @@ func (srv *Server) DeletePeer(node *enode.Node) error {
 	}
 
 	if peer == nil {
-		return errors.New("peer not found")
+		err := errors.New("peer not found")
+		srv.log.Info("DeletePeer failed to match a peer", "peerID", peerIDStr, "err", err)
+		return err
 	}
 
 	select {
 	case srv.delpeer <- peerDrop{peer, errors.New("forced delete"), true}:
 	case <-srv.quit:
 	}
+
+	srv.log.Info("DeletePeer passed the request to delpeer channel", "peerID", peerIDStr)
 
 	return nil
 }
