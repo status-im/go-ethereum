@@ -240,7 +240,26 @@ loop:
 
 	close(p.closed)
 	p.rw.close(reason)
-	p.wg.Wait()
+
+	/* A watchdog for the waitGroup (p.wg)
+	* When a peer shuts down we give 5 seconds for all protocols to finish,
+	* but we continue the process anyway (and print a warning message).
+	* Otherwise, this peer will be stuck in the list of peers (`admin_peers`)
+	* and won't be able to reconnect until the app is restarted.
+	* */
+	c := make(chan struct{})
+
+	go func() {
+		defer close(c)
+		p.wg.Wait()
+	}()
+
+	select {
+	case <-c:
+		p.Log().Trace("Peer stopped successfully")
+	case <-time.After(5 * time.Second):
+		p.Log().Warn("WATCHDOG_ENGAGED :: Timeout while waiting for the peer to shut down! A few goroutines leaked.")
+	}
 	return remoteRequested, err
 }
 
