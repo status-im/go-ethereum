@@ -238,6 +238,9 @@ loop:
 		}
 	}
 
+	close(p.closed)
+	p.rw.close(reason)
+
 	if shutdownErr := p.shutdownWithTimeout(5 * time.Second); shutdownErr != nil {
 		p.Log().Error("Timeout while waiting for the peer to shut down", "err", err)
 	}
@@ -246,9 +249,6 @@ loop:
 }
 
 func (p *Peer) shutdownWithTimeout(timeout time.Time) error {
-	close(p.closed)
-	p.rw.close(reason)
-
 	/* A watchdog for the waitGroup (p.wg)
 	* When a peer shuts down we give 5 seconds for all protocols to finish,
 	* but we continue the process anyway (and print a warning message).
@@ -258,8 +258,8 @@ func (p *Peer) shutdownWithTimeout(timeout time.Time) error {
 	c := make(chan struct{})
 
 	go func() {
-		defer close(c)
 		p.wg.Wait()
+		close(c)
 	}()
 
 	select {
