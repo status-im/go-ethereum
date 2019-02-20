@@ -238,6 +238,14 @@ loop:
 		}
 	}
 
+	if shutdownErr := p.shutdownWithTimeout(5 * time.Second); shutdownErr != nil {
+		p.Log().Error("Timeout while waiting for the peer to shut down", "err", err)
+	}
+
+	return remoteRequested, err
+}
+
+func (p *Peer) shutdownWithTimeout(timeout time.Time) error {
 	close(p.closed)
 	p.rw.close(reason)
 
@@ -257,10 +265,10 @@ loop:
 	select {
 	case <-c:
 		p.Log().Trace("Peer stopped successfully")
-	case <-time.After(5 * time.Second):
-		p.Log().Warn("WATCHDOG_ENGAGED :: Timeout while waiting for the peer to shut down! A few goroutines leaked.")
+		return nil
+	case <-time.After(timeout):
+		return errors.New("WATCHDOG_ENGAGED. A few goroutines leaked.")
 	}
-	return remoteRequested, err
 }
 
 func (p *Peer) pingLoop() {
