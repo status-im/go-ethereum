@@ -248,7 +248,7 @@ loop:
 	return remoteRequested, err
 }
 
-func (p *Peer) shutdownWithTimeout(timeout time.Time) error {
+func (p *Peer) shutdownWithTimeout(timeout time.Duration) error {
 	/* A watchdog for the waitGroup (p.wg)
 	* When a peer shuts down we give 5 seconds for all protocols to finish,
 	* but we continue the process anyway (and print a warning message).
