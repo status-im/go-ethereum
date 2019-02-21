@@ -264,7 +264,7 @@ func (p *Peer) shutdownWithTimeout(timeout time.Duration) error {
 
 	select {
 	case <-c:
-		p.Log().Trace("Peer stopped successfully")
+		p.Log().Debug("Peer stopped successfully")
 		return nil
 	case <-time.After(timeout):
 		return errors.New("WATCHDOG_ENGAGED. A few goroutines leaked.")
