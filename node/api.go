@@ -75,24 +75,6 @@ func (api *PrivateAdminAPI) RemovePeer(url string) (bool, error) {
 	return true, nil
 }
 
-// DeletePeer disconnects and deletes forcefully a remote node.
-func (api *PrivateAdminAPI) DeletePeer(url string) (bool, error) {
-	// Make sure the server is running, fail otherwise
-	server := api.node.Server()
-	if server == nil {
-		return false, ErrNodeStopped
-	}
-	// Try to remove the url as a static peer and return
-	node, err := enode.ParseV4(url)
-	if err != nil {
-		return false, fmt.Errorf("invalid enode: %v", err)
-	}
-	if err := server.DeletePeer(node); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 // AddTrustedPeer allows a remote node to always connect, even if slots are full
 func (api *PrivateAdminAPI) AddTrustedPeer(url string) (bool, error) {
 	// Make sure the server is running, fail otherwise
@@ -362,11 +344,6 @@ func (api *PublicDebugAPI) Metrics(raw bool) (map[string]interface{}, error) {
 					"Overall": float64(metric.Count()),
 				}
 
-			case metrics.Gauge:
-				root[name] = map[string]interface{}{
-					"Value": float64(metric.Value()),
-				}
-
 			case metrics.Meter:
 				root[name] = map[string]interface{}{
 					"AvgRate01Min": metric.Rate1(),
@@ -415,11 +392,6 @@ func (api *PublicDebugAPI) Metrics(raw bool) (map[string]interface{}, error) {
 			case metrics.Counter:
 				root[name] = map[string]interface{}{
 					"Overall": float64(metric.Count()),
-				}
-
-			case metrics.Gauge:
-				root[name] = map[string]interface{}{
-					"Value": float64(metric.Value()),
 				}
 
 			case metrics.Meter:

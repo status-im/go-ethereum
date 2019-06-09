@@ -8,7 +8,6 @@ package metrics
 import (
 	"os"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,10 +20,6 @@ import (
 // This global kill-switch helps quantify the observer effect and makes
 // for less cluttered pprof profiles.
 var Enabled bool = false
-
-// EnabledStr has the same function as Enabled but
-// it can be set during compilation (linking) time.
-var EnabledStr = "false"
 
 // MetricsEnabledFlag is the CLI flag name to use to enable metrics collections.
 const MetricsEnabledFlag = "metrics"
@@ -39,11 +34,6 @@ func init() {
 			log.Info("Enabling metrics collection")
 			Enabled = true
 		}
-	}
-
-	if v, err := strconv.ParseBool(EnabledStr); err == nil && v {
-		log.Info("Enabling metrics collection")
-		Enabled = v
 	}
 }
 
@@ -66,7 +56,6 @@ func CollectProcessMetrics(refresh time.Duration) {
 	memFrees := GetOrRegisterMeter("system/memory/frees", DefaultRegistry)
 	memInuse := GetOrRegisterMeter("system/memory/inuse", DefaultRegistry)
 	memPauses := GetOrRegisterMeter("system/memory/pauses", DefaultRegistry)
-	goroutines := GetOrRegisterGauge("system/goroutines", DefaultRegistry)
 
 	var diskReads, diskReadBytes, diskWrites, diskWriteBytes Meter
 	var diskReadBytesCounter, diskWriteBytesCounter Counter
@@ -100,10 +89,6 @@ func CollectProcessMetrics(refresh time.Duration) {
 			diskReadBytesCounter.Inc(diskstats[location1].ReadBytes - diskstats[location2].ReadBytes)
 			diskWriteBytesCounter.Inc(diskstats[location1].WriteBytes - diskstats[location2].WriteBytes)
 		}
-
-		goroutines.Update(int64(runtime.NumGoroutine()))
-
 		time.Sleep(refresh)
 	}
-
 }
