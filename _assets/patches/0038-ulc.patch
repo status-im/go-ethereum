@@ -1244,14 +1244,6 @@ index 678384f..9ae94b2 100644
  		params := &flowcontrol.ServerParams{}
  		if err := recv.get("flowControl/BL", &params.BufLimit); err != nil {
  			return err
-@@ -486,7 +507,6 @@ func (p *peer) Handshake(td *big.Int, head common.Hash, headNum uint64, genesis
- 		p.fcServer = flowcontrol.NewServerNode(params)
- 		p.fcCosts = MRC.decode()
- 	}
--
- 	p.headInfo = &announceData{Td: rTd, Hash: rHash, Number: rNum}
- 	return nil
- }
 @@ -576,8 +596,10 @@ func (ps *peerSet) Unregister(id string) error {
  		for _, n := range peers {
  			n.unregisterPeer(p)
@@ -1886,7 +1878,7 @@ index 7a02cc8..38fc66a 100644
 --- a/les/txrelay.go
 +++ b/les/txrelay.go
 @@ -121,7 +121,10 @@ func (self *LesTxRelay) send(txs types.Transactions, count int) {
- 				return peer.GetRequestCost(SendTxMsg, len(ll))
+ 				return peer.GetTxRelayCost(len(ll), len(enc))
  			},
  			canSend: func(dp distPeer) bool {
 -				return dp.(*peer) == pp
