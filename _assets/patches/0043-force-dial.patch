@@ -1,0 +1,43 @@
+diff --git a/p2p/dial.go b/p2p/dial.go
+index 075a0f936..bdaa11a95 100644
+--- a/p2p/dial.go
++++ b/p2p/dial.go
+@@ -198,6 +198,9 @@ func (s *dialstate) newTasks(nRunning int, peers map[enode.ID]*Peer, now time.Ti
+ 		case errNotWhitelisted, errSelf:
+ 			log.Warn("Removing static dial candidate", "id", t.dest.ID, "addr", &net.TCPAddr{IP: t.dest.IP(), Port: t.dest.TCP()}, "err", err)
+ 			delete(s.static, t.dest.ID())
++		case errRecentlyDialed:
++			expiry := s.hist.expiry(t.dest.ID())
++			log.Debug("peer was recently dialed", "enode", t.dest.String(), "expires at", expiry, "after", expiry.Sub(time.Now()))
+ 		case nil:
+ 			s.dialing[id] = t.flags
+ 			newtasks = append(newtasks, t)
+@@ -411,6 +414,16 @@ func (h dialHistory) contains(id enode.ID) bool {
+ 	}
+ 	return false
+ }
++
++func (h dialHistory) expiry(id enode.ID) time.Time {
++	for _, v := range h {
++		if v.id == id {
++			return v.exp
++		}
++	}
++	return time.Time{}
++}
++
+ func (h *dialHistory) expire(now time.Time) {
+ 	for h.Len() > 0 && h.min().exp.Before(now) {
+ 		heap.Pop(h)
+diff --git a/p2p/server.go b/p2p/server.go
+index 43db1be6f..2fbfe774f 100644
+--- a/p2p/server.go
++++ b/p2p/server.go
+@@ -693,6 +693,7 @@ running:
+ 			// ephemeral static peer list. Add it to the dialer,
+ 			// it will keep the node connected.
+ 			srv.log.Trace("Adding static node", "node", n)
++			dialstate.removeStatic(n)
+ 			dialstate.addStatic(n)
+ 		case n := <-srv.removestatic:
+ 			// This channel is used by RemovePeer to send a
