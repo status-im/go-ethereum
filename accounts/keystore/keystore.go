@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/pborman/uuid"
 	"github.com/status-im/status-go/extkeys"
 )
 
@@ -456,6 +457,39 @@ func (ks *KeyStore) ImportECDSA(priv *ecdsa.PrivateKey, passphrase string) (acco
 	if ks.cache.hasAddress(key.Address) {
 		return accounts.Account{}, fmt.Errorf("account already exists")
 	}
+	return ks.importKey(key, passphrase)
+}
+
+// ImportSingleExtendedKey imports an extended key setting it in both the PrivateKey and ExtendedKey fields
+// of the Key struct.
+// ImportExtendedKey is used in older version of Status where PrivateKey is set to be the BIP44 key at index 0,
+// and ExtendedKey is the extended key of the BIP44 key at index 1.
+func (ks *KeyStore) ImportSingleExtendedKey(extKey *extkeys.ExtendedKey, passphrase string) (accounts.Account, error) {
+	privateKeyECDSA := extKey.ToECDSA()
+	id := uuid.NewRandom()
+	key := &Key{
+		Id:          id,
+		Address:     crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
+		PrivateKey:  privateKeyECDSA,
+		ExtendedKey: extKey,
+	}
+
+	// if account is already imported, return cached version
+	if ks.cache.hasAddress(key.Address) {
+		a := accounts.Account{
+			Address: key.Address,
+		}
+		ks.cache.maybeReload()
+		ks.cache.mu.Lock()
+		a, err := ks.cache.find(a)
+		ks.cache.mu.Unlock()
+		if err != nil {
+			zeroKey(key.PrivateKey)
+			return a, err
+		}
+		return a, nil
+	}
+
 	return ks.importKey(key, passphrase)
 }
 
