@@ -495,12 +495,14 @@ func (ks *KeyStore) ImportSingleExtendedKey(extKey *extkeys.ExtendedKey, passphr
 
 // ImportExtendedKey stores ECDSA key (obtained from extended key) along with CKD#2 (root for sub-accounts)
 // If key file is not found, it is created. Key is encrypted with the given passphrase.
+// Deprecated: status-go is now using ImportSingleExtendedKey
 func (ks *KeyStore) ImportExtendedKey(extKey *extkeys.ExtendedKey, passphrase string) (accounts.Account, error) {
 	return ks.ImportExtendedKeyForPurpose(extkeys.KeyPurposeWallet, extKey, passphrase)
 }
 
 // ImportExtendedKeyForPurpose stores ECDSA key (obtained from extended key) along with CKD#2 (root for sub-accounts)
 // If key file is not found, it is created. Key is encrypted with the given passphrase.
+// Deprecated: status-go is now using ImportSingleExtendedKey
 func (ks *KeyStore) ImportExtendedKeyForPurpose(keyPurpose extkeys.KeyPurpose, extKey *extkeys.ExtendedKey, passphrase string) (accounts.Account, error) {
 	key, err := newKeyForPurposeFromExtendedKey(keyPurpose, extKey)
 	if err != nil {
