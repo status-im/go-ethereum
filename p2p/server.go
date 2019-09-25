@@ -35,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
+	"github.com/ethereum/go-ethereum/p2p/discv5"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/p2p/nat"
@@ -104,7 +105,7 @@ type Config struct {
 	// BootstrapNodesV5 are used to establish connectivity
 	// with the rest of the network using the V5 discovery
 	// protocol.
-	BootstrapNodesV5 []*enode.Node `toml:",omitempty"`
+	BootstrapNodesV5 []*discv5.Node `toml:",omitempty"`
 
 	// Static nodes are used as pre-configured connections which are always
 	// maintained and re-connected on disconnects.
@@ -181,7 +182,7 @@ type Server struct {
 	nodedb    *enode.DB
 	localnode *enode.LocalNode
 	ntab      *discover.UDPv4
-	DiscV5    *discover.UDPv5
+	DiscV5    *discv5.Network
 	discmix   *enode.FairMix
 	dialsched *dialScheduler
 
@@ -353,6 +354,36 @@ func (srv *Server) RemovePeer(node *enode.Node) {
 	}
 }
 
+// DeletePeer deletes the given node forcefully.
+func (srv *Server) DeletePeer(node *enode.Node) error {
+	peerIDStr := node.ID().String()
+
+	srv.log.Info("DeletePeer called", "peerID", peerIDStr)
+
+	var peer *Peer
+	for _, p := range srv.Peers() {
+		if p.ID() == node.ID() {
+			peer = p
+			break
+		}
+	}
+
+	if peer == nil {
+		err := errors.New("peer not found")
+		srv.log.Info("DeletePeer failed to match a peer", "peerID", peerIDStr, "err", err)
+		return err
+	}
+
+	select {
+	case srv.delpeer <- peerDrop{peer, errors.New("forced delete"), true}:
+	case <-srv.quit:
+	}
+
+	srv.log.Info("DeletePeer passed the request to delpeer channel", "peerID", peerIDStr)
+
+	return nil
+}
+
 // AddTrustedPeer adds the given node to a reserved whitelist which allows the
 // node to always connect, even if the slot are full.
 func (srv *Server) AddTrustedPeer(node *enode.Node) {
@@ -412,7 +443,7 @@ type sharedUDPConn struct {
 	unhandled chan discover.ReadPacket
 }
 
-// ReadFromUDP implements discover.UDPConn
+// ReadFromUDP implements discv5.conn
 func (s *sharedUDPConn) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error) {
 	packet, ok := <-s.unhandled
 	if !ok {
@@ -426,7 +457,7 @@ func (s *sharedUDPConn) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err err
 	return l, packet.Addr, nil
 }
 
-// Close implements discover.UDPConn
+// Close implements discv5.conn
 func (s *sharedUDPConn) Close() error {
 	return nil
 }
@@ -585,7 +616,7 @@ func (srv *Server) setupDiscovery() error {
 			Unhandled:   unhandled,
 			Log:         srv.log,
 		}
-		ntab, err := discover.ListenV4(conn, srv.localnode, cfg)
+		ntab, err := discover.ListenUDP(conn, srv.localnode, cfg)
 		if err != nil {
 			return err
 		}
@@ -595,21 +626,20 @@ func (srv *Server) setupDiscovery() error {
 
 	// Discovery V5
 	if srv.DiscoveryV5 {
-		cfg := discover.Config{
-			PrivateKey:  srv.PrivateKey,
-			NetRestrict: srv.NetRestrict,
-			Bootnodes:   srv.BootstrapNodesV5,
-			Log:         srv.log,
-		}
+		var ntab *discv5.Network
 		var err error
 		if sconn != nil {
-			srv.DiscV5, err = discover.ListenV5(sconn, srv.localnode, cfg)
+			ntab, err = discv5.ListenUDP(srv.PrivateKey, sconn, "", srv.NetRestrict)
 		} else {
-			srv.DiscV5, err = discover.ListenV5(conn, srv.localnode, cfg)
+			ntab, err = discv5.ListenUDP(srv.PrivateKey, conn, "", srv.NetRestrict)
 		}
 		if err != nil {
 			return err
 		}
+		if err := ntab.SetFallbackNodes(srv.BootstrapNodesV5); err != nil {
+			return err
+		}
+		srv.DiscV5 = ntab
 	}
 	return nil
 }
