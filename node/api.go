@@ -30,6 +30,12 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+// PrivateAdminAPI is the collection of administrative API methods exposed only
+// over a secure RPC channel.
+type PrivateAdminAPI struct {
+	node *Node // Node interfaced by this API
+}
+
 // apis returns the collection of built-in RPC APIs.
 func (n *Node) apis() []rpc.API {
 	return []rpc.API{
@@ -82,6 +88,24 @@ func (api *adminAPI) RemovePeer(url string) (bool, error) {
 		return false, fmt.Errorf("invalid enode: %v", err)
 	}
 	server.RemovePeer(node)
+	return true, nil
+}
+
+// DeletePeer disconnects and deletes forcefully a remote node.
+func (api *PrivateAdminAPI) DeletePeer(url string) (bool, error) {
+	// Make sure the server is running, fail otherwise
+	server := api.node.Server()
+	if server == nil {
+		return false, ErrNodeStopped
+	}
+	// Try to remove the url as a static peer and return
+	node, err := enode.ParseV4(url)
+	if err != nil {
+		return false, fmt.Errorf("invalid enode: %v", err)
+	}
+	if err := server.DeletePeer(node); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 

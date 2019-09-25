@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
+	"github.com/ethereum/go-ethereum/p2p/discv5"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
@@ -111,6 +112,7 @@ func main() {
 	}
 	defer conn.Close()
 
+<<<<<<< HEAD
 	db, _ := enode.OpenDB("")
 	ln := enode.NewLocalNode(db, nodeKey)
 
@@ -127,11 +129,19 @@ func main() {
 		PrivateKey:  nodeKey,
 		NetRestrict: restrictList,
 	}
+=======
+>>>>>>> 5fa8d3e21 (Apply patches)
 	if *runv5 {
-		if _, err := discover.ListenV5(conn, ln, cfg); err != nil {
+		if _, err := discv5.ListenUDP(nodeKey, conn, "", restrictList); err != nil {
 			utils.Fatalf("%v", err)
 		}
 	} else {
+		db, _ := enode.OpenDB("")
+		ln := enode.NewLocalNode(db, nodeKey)
+		cfg := discover.Config{
+			PrivateKey:  nodeKey,
+			NetRestrict: restrictList,
+		}
 		if _, err := discover.ListenUDP(conn, ln, cfg); err != nil {
 			utils.Fatalf("%v", err)
 		}
