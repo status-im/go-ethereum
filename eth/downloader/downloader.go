@@ -525,19 +525,12 @@ func (d *Downloader) syncWithPeer(p *peerConnection, hash common.Hash, td *big.I
 	} else if d.mode == FullSync {
 		fetchers = append(fetchers, d.processFullSyncContent)
 	}
-	return d.spawnSync(errCancelHeaderFetch, fetchers)
+	return d.spawnSync(fetchers)
 }
 
 // spawnSync runs d.process and all given fetcher functions to completion in
 // separate goroutines, returning the first error that appears.
-func (d *Downloader) spawnSync(errCancel error, fetchers []func() error) error {
-	d.cancelLock.Lock()
-	select {
-	case <-d.cancelCh:
-		d.cancelLock.Unlock()
-		return errCancel
-	default:
-	}
+func (d *Downloader) spawnSync(fetchers []func() error) error {
 	errc := make(chan error, len(fetchers))
 	d.cancelWg.Add(len(fetchers))
 	d.cancelLock.Unlock()
