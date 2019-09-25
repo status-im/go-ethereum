@@ -1,0 +1,36 @@
+diff --git a/metrics/metrics.go b/metrics/metrics.go
+index 8ab4e28f2..a5a93af63 100644
+--- a/metrics/metrics.go
++++ b/metrics/metrics.go
+@@ -8,6 +8,7 @@ package metrics
+ import (
+ 	"os"
+ 	"runtime"
++	"strconv"
+ 	"strings"
+ 	"time"
+
+@@ -26,6 +27,10 @@ var Enabled = false
+ // for health monitoring and debug metrics that might impact runtime performance.
+ var EnabledExpensive = false
+
++// EnabledStr has the same function as Enabled but
++// it can be set during compilation (linking) time.
++var EnabledStr = "false"
++
+ // enablerFlags is the CLI flag names to use to enable metrics collections.
+ var enablerFlags = []string{"metrics", "dashboard"}
+
+@@ -52,6 +57,12 @@ func init() {
+ 			}
+ 		}
+ 	}
++
++	if v, err := strconv.ParseBool(EnabledStr); err == nil && v {
++		log.Info("Enabling metrics collection")
++		Enabled = true
++		EnabledExpensive = true
++	}
+ }
+ 
+ // CollectProcessMetrics periodically collects various metrics about the running
