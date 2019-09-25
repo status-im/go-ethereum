@@ -148,6 +148,8 @@ type Downloader struct {
 	quitCh   chan struct{} // Quit channel to signal termination
 	quitLock sync.Mutex    // Lock to prevent double closes
 
+	downloads sync.WaitGroup // Keeps track of the currently active downloads
+
 	// Testing hooks
 	syncInitHook     func(uint64, uint64)  // Method to call upon initiating a new sync run
 	bodyFetchHook    func([]*types.Header) // Method to call upon starting a block body fetch
@@ -447,7 +449,9 @@ func (d *Downloader) getMode() SyncMode {
 // specified peer and head hash.
 func (d *Downloader) syncWithPeer(p *peerConnection, hash common.Hash, td, ttd *big.Int, beaconMode bool) (err error) {
 	d.mux.Post(StartEvent{})
+	d.downloads.Add(1)
 	defer func() {
+		d.downloads.Done()
 		// reset on error
 		if err != nil {
 			d.mux.Post(FailedEvent{err})
@@ -621,14 +625,22 @@ func (d *Downloader) syncWithPeer(p *peerConnection, hash common.Hash, td, ttd *
 	} else if mode == FullSync {
 		fetchers = append(fetchers, func() error { return d.processFullSyncContent(ttd, beaconMode) })
 	}
-	return d.spawnSync(fetchers)
+	return d.spawnSync(errCanceled, fetchers)
 }
 
 // spawnSync runs d.process and all given fetcher functions to completion in
 // separate goroutines, returning the first error that appears.
-func (d *Downloader) spawnSync(fetchers []func() error) error {
+func (d *Downloader) spawnSync(errCancel error, fetchers []func() error) error {
+	d.cancelLock.Lock()
+	select {
+	case <-d.cancelCh:
+		d.cancelLock.Unlock()
+		return errCancel
+	default:
+	}
 	errc := make(chan error, len(fetchers))
 	d.cancelWg.Add(len(fetchers))
+	d.cancelLock.Unlock()
 	for _, fn := range fetchers {
 		fn := fn
 		go func() { defer d.cancelWg.Done(); errc <- fn() }()
@@ -693,6 +705,10 @@ func (d *Downloader) Terminate() {
 
 	// Cancel any pending download requests
 	d.Cancel()
+
+	// Wait, so external dependencies aren't destroyed
+	// until the download processing is done.
+	d.downloads.Wait()
 }
 
 // fetchHead retrieves the head header and prior pivot block (if available) from

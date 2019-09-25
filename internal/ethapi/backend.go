@@ -20,17 +20,16 @@ package ethapi
 import (
 	"context"
 	"math/big"
-	"time"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/bloombits"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/filters"
+	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/params"
@@ -41,17 +40,15 @@ import (
 // both full and light clients) with access to necessary functions.
 type Backend interface {
 	// General Ethereum API
-	SyncProgress() ethereum.SyncProgress
-
+	Downloader() *downloader.Downloader
 	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
-	FeeHistory(ctx context.Context, blockCount int, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (*big.Int, [][]*big.Int, []*big.Int, []float64, error)
+	FeeHistory(ctx context.Context, blockCount int, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (rpc.BlockNumber, [][]*big.Int, []*big.Int, []float64, error)
 	ChainDb() ethdb.Database
 	AccountManager() *accounts.Manager
 	ExtRPCEnabled() bool
-	RPCGasCap() uint64            // global gas cap for eth_call over rpc: DoS protection
-	RPCEVMTimeout() time.Duration // global timeout for eth_call over rpc: DoS protection
-	RPCTxFeeCap() float64         // global tx fee cap for all transaction related APIs
-	UnprotectedAllowed() bool     // allows only for EIP155 transactions.
+	RPCGasCap() uint64        // global gas cap for eth_call over rpc: DoS protection
+	RPCTxFeeCap() float64     // global tx fee cap for all transaction related APIs
+	UnprotectedAllowed() bool // allows only for EIP155 transactions.
 
 	// Blockchain API
 	SetHead(number uint64)
@@ -65,7 +62,6 @@ type Backend interface {
 	BlockByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*types.Block, error)
 	StateAndHeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*state.StateDB, *types.Header, error)
 	StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*state.StateDB, *types.Header, error)
-	PendingBlockAndReceipts() (*types.Block, types.Receipts)
 	GetReceipts(ctx context.Context, hash common.Hash) (types.Receipts, error)
 	GetTd(ctx context.Context, hash common.Hash) *big.Int
 	GetEVM(ctx context.Context, msg core.Message, state *state.StateDB, header *types.Header, vmConfig *vm.Config) (*vm.EVM, func() error, error)
@@ -81,15 +77,18 @@ type Backend interface {
 	GetPoolNonce(ctx context.Context, addr common.Address) (uint64, error)
 	Stats() (pending int, queued int)
 	TxPoolContent() (map[common.Address]types.Transactions, map[common.Address]types.Transactions)
-	TxPoolContentFrom(addr common.Address) (types.Transactions, types.Transactions)
 	SubscribeNewTxsEvent(chan<- core.NewTxsEvent) event.Subscription
+
+	// Filter API
+	BloomStatus() (uint64, uint64)
+	GetLogs(ctx context.Context, blockHash common.Hash) ([][]*types.Log, error)
+	ServiceFilter(ctx context.Context, session *bloombits.MatcherSession)
+	SubscribeLogsEvent(ch chan<- []*types.Log) event.Subscription
+	SubscribePendingLogsEvent(ch chan<- []*types.Log) event.Subscription
+	SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEvent) event.Subscription
 
 	ChainConfig() *params.ChainConfig
 	Engine() consensus.Engine
-
-	// eth/filters needs to be initialized from this backend type, so methods needed by
-	// it must also be included here.
-	filters.Backend
 }
 
 func GetAPIs(apiBackend Backend) []rpc.API {
@@ -97,25 +96,43 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 	return []rpc.API{
 		{
 			Namespace: "eth",
-			Service:   NewEthereumAPI(apiBackend),
+			Version:   "1.0",
+			Service:   NewPublicEthereumAPI(apiBackend),
+			Public:    true,
 		}, {
 			Namespace: "eth",
-			Service:   NewBlockChainAPI(apiBackend),
+			Version:   "1.0",
+			Service:   NewPublicBlockChainAPI(apiBackend),
+			Public:    true,
 		}, {
 			Namespace: "eth",
-			Service:   NewTransactionAPI(apiBackend, nonceLock),
+			Version:   "1.0",
+			Service:   NewPublicTransactionPoolAPI(apiBackend, nonceLock),
+			Public:    true,
 		}, {
 			Namespace: "txpool",
-			Service:   NewTxPoolAPI(apiBackend),
+			Version:   "1.0",
+			Service:   NewPublicTxPoolAPI(apiBackend),
+			Public:    true,
 		}, {
 			Namespace: "debug",
-			Service:   NewDebugAPI(apiBackend),
+			Version:   "1.0",
+			Service:   NewPublicDebugAPI(apiBackend),
+			Public:    true,
+		}, {
+			Namespace: "debug",
+			Version:   "1.0",
+			Service:   NewPrivateDebugAPI(apiBackend),
 		}, {
 			Namespace: "eth",
-			Service:   NewEthereumAccountAPI(apiBackend.AccountManager()),
+			Version:   "1.0",
+			Service:   NewPublicAccountAPI(apiBackend.AccountManager()),
+			Public:    true,
 		}, {
 			Namespace: "personal",
-			Service:   NewPersonalAccountAPI(apiBackend, nonceLock),
+			Version:   "1.0",
+			Service:   NewPrivateAccountAPI(apiBackend, nonceLock),
+			Public:    false,
 		},
 	}
 }
