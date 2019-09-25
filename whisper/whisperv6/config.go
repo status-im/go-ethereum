@@ -16,14 +16,11 @@
 
 package whisperv6
 
-import "time"
-
 // Config represents the configuration state of a whisper node.
 type Config struct {
 	MaxMessageSize                        uint32  `toml:",omitempty"`
 	MinimumAcceptedPOW                    float64 `toml:",omitempty"`
 	RestrictConnectionBetweenLightClients bool    `toml:",omitempty"`
-	TimeSource                            func() time.Time
 }
 
 // DefaultConfig represents (shocker!) the default configuration.
@@ -31,5 +28,4 @@ var DefaultConfig = Config{
 	MaxMessageSize:                        DefaultMaxMessageSize,
 	MinimumAcceptedPOW:                    DefaultMinimumPoW,
 	RestrictConnectionBetweenLightClients: true,
-	TimeSource:                            time.Now,
 }
