@@ -200,31 +200,14 @@ func New(stack *node.Node, config *ethconfig.Config) (*LightEthereum, error) {
 
 // VfluxRequest sends a batch of requests to the given node through discv5 UDP TalkRequest and returns the responses
 func (s *LightEthereum) VfluxRequest(n *enode.Node, reqs vflux.Requests) vflux.Replies {
-	if !s.udpEnabled {
-		return nil
-	}
-	reqsEnc, _ := rlp.EncodeToBytes(&reqs)
-	repliesEnc, _ := s.p2pServer.DiscV5.TalkRequest(s.serverPool.DialNode(n), "vfx", reqsEnc)
-	var replies vflux.Replies
-	if len(repliesEnc) == 0 || rlp.DecodeBytes(repliesEnc, &replies) != nil {
-		return nil
-	}
-	return replies
+	return nil
 }
 
 // vfxVersion returns the version number of the "les" service subdomain of the vflux UDP
 // service, as advertised in the ENR record
 func (s *LightEthereum) vfxVersion(n *enode.Node) uint {
 	if n.Seq() == 0 {
-		var err error
-		if !s.udpEnabled {
-			return 0
-		}
-		if n, err = s.p2pServer.DiscV5.RequestENR(n); n != nil && err == nil && n.Seq() != 0 {
-			s.serverPool.Persist(n)
-		} else {
-			return 0
-		}
+		return 0
 	}
 
 	var les []rlp.RawValue
