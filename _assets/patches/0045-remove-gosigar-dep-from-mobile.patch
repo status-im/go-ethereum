@@ -25,11 +25,11 @@ index 3278d8161..a7bf8f5d0 100644
  }
 diff --git a/metrics/cpu_stats.go b/metrics/cpu_stats.go
 new file mode 100644
-index 000000000..6ef0e1f0c
+index 000000000..35d396ae2
 --- /dev/null
 +++ b/metrics/cpu_stats.go
 @@ -0,0 +1,14 @@
-+// +build !ios
++// +build !ios,!android
 +
 +package metrics
 +
