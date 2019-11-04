@@ -1,8 +1,8 @@
 diff --git a/eth/downloader/downloader.go b/eth/downloader/downloader.go
-index fbde9c6c..c0013a11 100644
+index edd0eb4d9..a1088bd23 100644
 --- a/eth/downloader/downloader.go
 +++ b/eth/downloader/downloader.go
-@@ -143,6 +143,8 @@ type Downloader struct {
+@@ -152,6 +152,8 @@ type Downloader struct {
  	quitCh   chan struct{} // Quit channel to signal termination
  	quitLock sync.RWMutex  // Lock to prevent double closes
  
@@ -11,7 +11,7 @@ index fbde9c6c..c0013a11 100644
  	// Testing hooks
  	syncInitHook     func(uint64, uint64)  // Method to call upon initiating a new sync run
  	bodyFetchHook    func([]*types.Header) // Method to call upon starting a block body fetch
-@@ -403,7 +405,9 @@ func (d *Downloader) synchronise(id string, hash common.Hash, td *big.Int, mode
+@@ -415,7 +417,9 @@ func (d *Downloader) synchronise(id string, hash common.Hash, td *big.Int, mode
  // specified peer and head hash.
  func (d *Downloader) syncWithPeer(p *peerConnection, hash common.Hash, td *big.Int) (err error) {
  	d.mux.Post(StartEvent{})
@@ -21,12 +21,12 @@ index fbde9c6c..c0013a11 100644
  		// reset on error
  		if err != nil {
  			d.mux.Post(FailedEvent{err})
-@@ -471,14 +475,22 @@ func (d *Downloader) syncWithPeer(p *peerConnection, hash common.Hash, td *big.I
+@@ -521,14 +525,22 @@ func (d *Downloader) syncWithPeer(p *peerConnection, hash common.Hash, td *big.I
  	} else if d.mode == FullSync {
  		fetchers = append(fetchers, d.processFullSyncContent)
  	}
 -	return d.spawnSync(fetchers)
-+	return d.spawnSync(errCancelHeaderFetch, fetchers)
++	return d.spawnSync(errCanceled, fetchers)
  }
  
  // spawnSync runs d.process and all given fetcher functions to completion in
@@ -46,7 +46,7 @@ index fbde9c6c..c0013a11 100644
  	for _, fn := range fetchers {
  		fn := fn
  		go func() { defer d.cancelWg.Done(); errc <- fn() }()
-@@ -539,6 +551,10 @@ func (d *Downloader) Terminate() {
+@@ -592,6 +604,10 @@ func (d *Downloader) Terminate() {
  
  	// Cancel any pending download requests
  	d.Cancel()
