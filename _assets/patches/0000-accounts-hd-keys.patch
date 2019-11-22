@@ -6,7 +6,7 @@ index 84d8df0c5..551b386a5 100644
  	"github.com/ethereum/go-ethereum/common"
  	"github.com/ethereum/go-ethereum/crypto"
  	"github.com/pborman/uuid"
-+	"github.com/status-im/extkeys"
++	"github.com/status-im/status-go/extkeys"
  )
  
  const (
@@ -87,7 +87,7 @@ index 2918047cc..333fbef6f 100644
  	"github.com/ethereum/go-ethereum/core/types"
  	"github.com/ethereum/go-ethereum/crypto"
  	"github.com/ethereum/go-ethereum/event"
-+	"github.com/status-im/extkeys"
++	"github.com/status-im/status-go/extkeys"
  )
  
  var (
@@ -173,7 +173,7 @@ index a0b6cf538..e2512c6e8 100644
  	"github.com/ethereum/go-ethereum/common/math"
  	"github.com/ethereum/go-ethereum/crypto"
  	"github.com/pborman/uuid"
-+	"github.com/status-im/extkeys"
++	"github.com/status-im/status-go/extkeys"
  	"golang.org/x/crypto/pbkdf2"
  	"golang.org/x/crypto/scrypt"
  )

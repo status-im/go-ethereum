@@ -50,7 +50,6 @@ require (
 	github.com/robertkrimen/otto v0.0.0-20170205013659-6a77b7cbc37d
 	github.com/rs/cors v0.0.0-20160617231935-a62a804a8a00
 	github.com/rs/xhandler v0.0.0-20160618193221-ed27b6fd6521
-	github.com/status-im/extkeys v1.0.0 // indirect
 	github.com/stretchr/testify v0.0.0-20170809224252-890a5c3458b4
 	github.com/syndtr/goleveldb v0.0.0-20181128100959-b001fa50d6b2
 	github.com/uber/jaeger-client-go v0.0.0-20180607151842-f7e0d4744fa6
