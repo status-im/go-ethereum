@@ -43,9 +43,10 @@ import (
 )
 
 var (
-	ErrLocked  = accounts.NewAuthNeededError("password or unlock")
-	ErrNoMatch = errors.New("no key for given address or file")
-	ErrDecrypt = errors.New("could not decrypt key with given password")
+	ErrLocked        = accounts.NewAuthNeededError("password or unlock")
+	ErrNoMatch       = errors.New("no key for given address or file")
+	ErrDecrypt       = errors.New("could not decrypt key with given password")
+	ErrAccountExists = errors.New("account already exists")
 )
 
 // KeyStoreType is the reflect type of a keystore backend.
@@ -457,7 +458,7 @@ func (ks *KeyStore) Import(keyJSON []byte, passphrase, newPassphrase string) (ac
 func (ks *KeyStore) ImportECDSA(priv *ecdsa.PrivateKey, passphrase string) (accounts.Account, error) {
 	key := newKeyFromECDSA(priv)
 	if ks.cache.hasAddress(key.Address) {
-		return accounts.Account{}, fmt.Errorf("account already exists")
+		return accounts.Account{}, ErrAccountExists
 	}
 	return ks.importKey(key, passphrase)
 }
@@ -477,7 +478,7 @@ func (ks *KeyStore) ImportSingleExtendedKey(extKey *extkeys.ExtendedKey, passphr
 	}
 
 	if ks.cache.hasAddress(key.Address) {
-		return accounts.Account{}, fmt.Errorf("account already exists")
+		return accounts.Account{}, ErrAccountExists
 	}
 
 	return ks.importKey(key, passphrase)
