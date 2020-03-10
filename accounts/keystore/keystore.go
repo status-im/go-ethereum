@@ -476,20 +476,8 @@ func (ks *KeyStore) ImportSingleExtendedKey(extKey *extkeys.ExtendedKey, passphr
 		ExtendedKey: extKey,
 	}
 
-	// if account is already imported, return cached version
 	if ks.cache.hasAddress(key.Address) {
-		a := accounts.Account{
-			Address: key.Address,
-		}
-		ks.cache.maybeReload()
-		ks.cache.mu.Lock()
-		a, err := ks.cache.find(a)
-		ks.cache.mu.Unlock()
-		if err != nil {
-			zeroKey(key.PrivateKey)
-			return a, err
-		}
-		return a, nil
+		return accounts.Account{}, fmt.Errorf("account already exists")
 	}
 
 	return ks.importKey(key, passphrase)
