@@ -1,8 +1,22 @@
 diff --git a/accounts/keystore/keystore.go b/accounts/keystore/keystore.go
-index c1d8ca187..d9e92f982 100644
+index c1d8ca187..97f411cd6 100644
 --- a/accounts/keystore/keystore.go
 +++ b/accounts/keystore/keystore.go
-@@ -43,9 +43,10 @@ import (
+@@ -24,8 +24,6 @@ import (
+ 	"crypto/ecdsa"
+ 	crand "crypto/rand"
+ 	"errors"
+-	"fmt"
+-	"github.com/pborman/uuid"
+ 	"math/big"
+ 	"os"
+ 	"path/filepath"
+@@ -39,13 +37,15 @@ import (
+ 	"github.com/ethereum/go-ethereum/core/types"
+ 	"github.com/ethereum/go-ethereum/crypto"
+ 	"github.com/ethereum/go-ethereum/event"
++	"github.com/pborman/uuid"
+ 	"github.com/status-im/status-go/extkeys"
  )
  
  var (
@@ -16,7 +30,7 @@ index c1d8ca187..d9e92f982 100644
  )
  
  // KeyStoreType is the reflect type of a keystore backend.
-@@ -457,7 +458,7 @@ func (ks *KeyStore) Import(keyJSON []byte, passphrase, newPassphrase string) (ac
+@@ -457,7 +457,7 @@ func (ks *KeyStore) Import(keyJSON []byte, passphrase, newPassphrase string) (ac
  func (ks *KeyStore) ImportECDSA(priv *ecdsa.PrivateKey, passphrase string) (accounts.Account, error) {
  	key := newKeyFromECDSA(priv)
  	if ks.cache.hasAddress(key.Address) {
@@ -25,7 +39,7 @@ index c1d8ca187..d9e92f982 100644
  	}
  	return ks.importKey(key, passphrase)
  }
-@@ -476,20 +477,8 @@ func (ks *KeyStore) ImportSingleExtendedKey(extKey *extkeys.ExtendedKey, passphr
+@@ -476,20 +476,8 @@ func (ks *KeyStore) ImportSingleExtendedKey(extKey *extkeys.ExtendedKey, passphr
  		ExtendedKey: extKey,
  	}
  

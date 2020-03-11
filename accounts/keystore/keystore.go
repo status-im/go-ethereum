@@ -24,8 +24,6 @@ import (
 	"crypto/ecdsa"
 	crand "crypto/rand"
 	"errors"
-	"fmt"
-	"github.com/pborman/uuid"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -39,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/pborman/uuid"
 	"github.com/status-im/status-go/extkeys"
 )
 
