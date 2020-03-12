@@ -1,5 +1,5 @@
 diff --git a/metrics/metrics.go b/metrics/metrics.go
-index 8ab4e28f2..a5a93af63 100644
+index 747d6471a..d9a27e07e 100644
 --- a/metrics/metrics.go
 +++ b/metrics/metrics.go
 @@ -8,6 +8,7 @@ package metrics
@@ -9,18 +9,18 @@ index 8ab4e28f2..a5a93af63 100644
 +	"strconv"
  	"strings"
  	"time"
-
+ 
 @@ -26,6 +27,10 @@ var Enabled = false
  // for health monitoring and debug metrics that might impact runtime performance.
  var EnabledExpensive = false
-
+ 
 +// EnabledStr has the same function as Enabled but
 +// it can be set during compilation (linking) time.
 +var EnabledStr = "false"
 +
  // enablerFlags is the CLI flag names to use to enable metrics collections.
- var enablerFlags = []string{"metrics", "dashboard"}
-
+ var enablerFlags = []string{"metrics"}
+ 
 @@ -52,6 +57,12 @@ func init() {
  			}
  		}
