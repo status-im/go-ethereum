@@ -200,7 +200,6 @@ func EncryptKey(key *Key, auth string, scryptN, scryptP int) ([]byte, error) {
 		key.Id.String(),
 		version,
 		encryptedExtendedKey,
-		key.SubAccountIndex,
 	}
 	return json.Marshal(encryptedKeyJSONV3)
 }
@@ -267,11 +266,6 @@ func DecryptKey(keyjson []byte, auth string) (*Key, error) {
 		extKey          *extkeys.ExtendedKey
 	)
 
-	subAccountIndex, ok := m["subaccountindex"].(float64)
-	if !ok {
-		subAccountIndex = 0
-	}
-
 	if version, ok := m["version"].(string); ok && version == "1" {
 		k := new(encryptedKeyJSONV1)
 		if err := json.Unmarshal(keyjson, k); err != nil {
@@ -310,7 +304,6 @@ func DecryptKey(keyjson []byte, auth string) (*Key, error) {
 		Address:         crypto.PubkeyToAddress(key.PublicKey),
 		PrivateKey:      key,
 		ExtendedKey:     extKey,
-		SubAccountIndex: uint32(subAccountIndex),
 	}, nil
 }
 

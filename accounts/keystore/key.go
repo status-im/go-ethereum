@@ -50,10 +50,6 @@ type Key struct {
 	// ExtendedKey is the extended key of the PrivateKey itself, and it's used
 	// to derive child keys.
 	ExtendedKey *extkeys.ExtendedKey
-	// SubAccountIndex is DEPRECATED
-	// It was use in Status to keep track of the number of sub-account created
-	// before having multi-account support.
-	SubAccountIndex uint32
 }
 
 type keyStore interface {
@@ -78,7 +74,6 @@ type encryptedKeyJSONV3 struct {
 	Id              string     `json:"id"`
 	Version         int        `json:"version"`
 	ExtendedKey     CryptoJSON `json:"extendedkey"`
-	SubAccountIndex uint32     `json:"subaccountindex"`
 }
 
 type encryptedKeyJSONV1 struct {
@@ -145,40 +140,6 @@ func newKeyFromECDSA(privateKeyECDSA *ecdsa.PrivateKey) *Key {
 		PrivateKey: privateKeyECDSA,
 	}
 	return key
-}
-
-func newKeyForPurposeFromExtendedKey(keyPurpose extkeys.KeyPurpose, extKey *extkeys.ExtendedKey) (*Key, error) {
-	var (
-		extChild1, extChild2 *extkeys.ExtendedKey
-		err                  error
-	)
-
-	if extKey.Depth == 0 { // we are dealing with master key
-		// CKD#1 - main account
-		extChild1, err = extKey.ChildForPurpose(keyPurpose, 0)
-		if err != nil {
-			return &Key{}, err
-		}
-
-		// CKD#2 - sub-accounts root
-		extChild2, err = extKey.ChildForPurpose(keyPurpose, 1)
-		if err != nil {
-			return &Key{}, err
-		}
-	} else { // we are dealing with non-master key, so it is safe to persist and extend from it
-		extChild1 = extKey
-		extChild2 = extKey
-	}
-
-	privateKeyECDSA := extChild1.ToECDSA()
-	id := uuid.NewRandom()
-	key := &Key{
-		Id:          id,
-		Address:     crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
-		PrivateKey:  privateKeyECDSA,
-		ExtendedKey: extChild2,
-	}
-	return key, nil
 }
 
 // NewKeyForDirectICAP generates a key whose address fits into < 155 bits so it can fit

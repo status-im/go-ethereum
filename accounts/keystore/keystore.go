@@ -483,42 +483,6 @@ func (ks *KeyStore) ImportSingleExtendedKey(extKey *extkeys.ExtendedKey, passphr
 	return ks.importKey(key, passphrase)
 }
 
-// ImportExtendedKey stores ECDSA key (obtained from extended key) along with CKD#2 (root for sub-accounts)
-// If key file is not found, it is created. Key is encrypted with the given passphrase.
-// Deprecated: status-go is now using ImportSingleExtendedKey
-func (ks *KeyStore) ImportExtendedKey(extKey *extkeys.ExtendedKey, passphrase string) (accounts.Account, error) {
-	return ks.ImportExtendedKeyForPurpose(extkeys.KeyPurposeWallet, extKey, passphrase)
-}
-
-// ImportExtendedKeyForPurpose stores ECDSA key (obtained from extended key) along with CKD#2 (root for sub-accounts)
-// If key file is not found, it is created. Key is encrypted with the given passphrase.
-// Deprecated: status-go is now using ImportSingleExtendedKey
-func (ks *KeyStore) ImportExtendedKeyForPurpose(keyPurpose extkeys.KeyPurpose, extKey *extkeys.ExtendedKey, passphrase string) (accounts.Account, error) {
-	key, err := newKeyForPurposeFromExtendedKey(keyPurpose, extKey)
-	if err != nil {
-		zeroKey(key.PrivateKey)
-		return accounts.Account{}, err
-	}
-
-	// if account is already imported, return cached version
-	if ks.cache.hasAddress(key.Address) {
-		a := accounts.Account{
-			Address: key.Address,
-		}
-		ks.cache.maybeReload()
-		ks.cache.mu.Lock()
-		a, err := ks.cache.find(a)
-		ks.cache.mu.Unlock()
-		if err != nil {
-			zeroKey(key.PrivateKey)
-			return a, err
-		}
-		return a, nil
-	}
-
-	return ks.importKey(key, passphrase)
-}
-
 func (ks *KeyStore) importKey(key *Key, passphrase string) (accounts.Account, error) {
 	a := accounts.Account{Address: key.Address, URL: accounts.URL{Scheme: KeyStoreScheme, Path: ks.storage.JoinPath(keyFileName(key.Address))}}
 	if err := ks.storage.StoreKey(a.URL.Path, key, passphrase); err != nil {
@@ -527,15 +491,6 @@ func (ks *KeyStore) importKey(key *Key, passphrase string) (accounts.Account, er
 	ks.cache.add(a)
 	ks.refreshWallets()
 	return a, nil
-}
-
-func (ks *KeyStore) IncSubAccountIndex(a accounts.Account, passphrase string) error {
-	a, key, err := ks.getDecryptedKey(a, passphrase)
-	if err != nil {
-		return err
-	}
-	key.SubAccountIndex++
-	return ks.storage.StoreKey(a.URL.Path, key, passphrase)
 }
 
 // Update changes the passphrase of an existing account.

@@ -1,5 +1,5 @@
 diff --git a/accounts/keystore/key.go b/accounts/keystore/key.go
-index 84d8df0c5..551b386a5 100644
+index 84d8df0c5..cbadffb18 100644
 --- a/accounts/keystore/key.go
 +++ b/accounts/keystore/key.go
 @@ -33,6 +33,7 @@ import (
@@ -10,18 +10,17 @@ index 84d8df0c5..551b386a5 100644
  )
  
  const (
-@@ -46,6 +47,10 @@ type Key struct {
+@@ -46,6 +47,9 @@ type Key struct {
  	// we only store privkey as pubkey/address can be derived from it
  	// privkey in this struct is always in plaintext
  	PrivateKey *ecdsa.PrivateKey
-+	// extended key is the root node for new hardened children i.e. sub-accounts
++	// ExtendedKey is the extended key of the PrivateKey itself, and it's used
++	// to derive child keys.
 +	ExtendedKey *extkeys.ExtendedKey
-+	// next index to be used for sub-account child derivation
-+	SubAccountIndex uint32
  }
  
  type keyStore interface {
-@@ -65,10 +70,12 @@ type plainKeyJSON struct {
+@@ -65,10 +69,11 @@ type plainKeyJSON struct {
  }
  
  type encryptedKeyJSONV3 struct {
@@ -34,64 +33,41 @@ index 84d8df0c5..551b386a5 100644
 +	Id              string     `json:"id"`
 +	Version         int        `json:"version"`
 +	ExtendedKey     CryptoJSON `json:"extendedkey"`
-+	SubAccountIndex uint32     `json:"subaccountindex"`
  }
  
  type encryptedKeyJSONV1 struct {
-@@ -137,6 +144,40 @@ func newKeyFromECDSA(privateKeyECDSA *ecdsa.PrivateKey) *Key {
- 	return key
- }
- 
-+func newKeyFromExtendedKey(extKey *extkeys.ExtendedKey) (*Key, error) {
-+	var (
-+		extChild1, extChild2 *extkeys.ExtendedKey
-+		err                  error
-+	)
-+
-+	if extKey.Depth == 0 { // we are dealing with master key
-+		// CKD#1 - main account
-+		extChild1, err = extKey.BIP44Child(extkeys.CoinTypeETH, 0)
-+		if err != nil {
-+			return &Key{}, err
-+		}
-+
-+		// CKD#2 - sub-accounts root
-+		extChild2, err = extKey.BIP44Child(extkeys.CoinTypeETH, 1)
-+		if err != nil {
-+			return &Key{}, err
-+		}
-+	} else { // we are dealing with non-master key, so it is safe to persist and extend from it
-+		extChild1 = extKey
-+		extChild2 = extKey
-+	}
-+
-+	privateKeyECDSA := extChild1.ToECDSA()
-+	id := uuid.NewRandom()
-+	key := &Key{
-+		Id:          id,
-+		Address:     crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
-+		PrivateKey:  privateKeyECDSA,
-+		ExtendedKey: extChild2,
-+	}
-+	return key, nil
-+}
-+
- // NewKeyForDirectICAP generates a key whose address fits into < 155 bits so it can fit
- // into the Direct ICAP spec. for simplicity and easier compatibility with other libs, we
- // retry until the first byte is 0.
 diff --git a/accounts/keystore/keystore.go b/accounts/keystore/keystore.go
-index 2918047cc..333fbef6f 100644
+index 5b55175b1..c565bad41 100644
 --- a/accounts/keystore/keystore.go
 +++ b/accounts/keystore/keystore.go
-@@ -38,6 +38,7 @@ import (
+@@ -24,7 +24,6 @@ import (
+ 	"crypto/ecdsa"
+ 	crand "crypto/rand"
+ 	"errors"
+-	"fmt"
+ 	"math/big"
+ 	"os"
+ 	"path/filepath"
+@@ -38,12 +37,15 @@ import (
  	"github.com/ethereum/go-ethereum/core/types"
  	"github.com/ethereum/go-ethereum/crypto"
  	"github.com/ethereum/go-ethereum/event"
++	"github.com/pborman/uuid"
 +	"github.com/status-im/status-go/extkeys"
  )
  
  var (
-@@ -228,6 +229,11 @@ func (ks *KeyStore) Accounts() []accounts.Account {
+-	ErrLocked  = accounts.NewAuthNeededError("password or unlock")
+-	ErrNoMatch = errors.New("no key for given address or file")
+-	ErrDecrypt = errors.New("could not decrypt key with given password")
++	ErrLocked        = accounts.NewAuthNeededError("password or unlock")
++	ErrNoMatch       = errors.New("no key for given address or file")
++	ErrDecrypt       = errors.New("could not decrypt key with given password")
++	ErrAccountExists = errors.New("account already exists")
+ )
+ 
+ // KeyStoreType is the reflect type of a keystore backend.
+@@ -230,6 +232,11 @@ func (ks *KeyStore) Accounts() []accounts.Account {
  	return ks.cache.accounts()
  }
  
@@ -103,58 +79,38 @@ index 2918047cc..333fbef6f 100644
  // Delete deletes the key matched by account if the passphrase is correct.
  // If the account contains no filename, the address must match a unique key.
  func (ks *KeyStore) Delete(a accounts.Account, passphrase string) error {
-@@ -453,6 +459,34 @@ func (ks *KeyStore) ImportECDSA(priv *ecdsa.PrivateKey, passphrase string) (acco
- 	return ks.importKey(key, passphrase)
- }
- 
-+// ImportExtendedKey stores ECDSA key (obtained from extended key) along with CKD#2 (root for sub-accounts)
-+// If key file is not found, it is created. Key is encrypted with the given passphrase.
-+func (ks *KeyStore) ImportExtendedKey(extKey *extkeys.ExtendedKey, passphrase string) (accounts.Account, error) {
-+	key, err := newKeyFromExtendedKey(extKey)
-+	if err != nil {
-+		zeroKey(key.PrivateKey)
-+		return accounts.Account{}, err
+@@ -450,8 +457,29 @@ func (ks *KeyStore) Import(keyJSON []byte, passphrase, newPassphrase string) (ac
+ func (ks *KeyStore) ImportECDSA(priv *ecdsa.PrivateKey, passphrase string) (accounts.Account, error) {
+ 	key := newKeyFromECDSA(priv)
+ 	if ks.cache.hasAddress(key.Address) {
+-		return accounts.Account{}, fmt.Errorf("account already exists")
++		return accounts.Account{}, ErrAccountExists
 +	}
-+
-+	// if account is already imported, return cached version
-+	if ks.cache.hasAddress(key.Address) {
-+		a := accounts.Account{
-+			Address: key.Address,
-+		}
-+		ks.cache.maybeReload()
-+		ks.cache.mu.Lock()
-+		a, err := ks.cache.find(a)
-+		ks.cache.mu.Unlock()
-+		if err != nil {
-+			zeroKey(key.PrivateKey)
-+			return a, err
-+		}
-+		return a, nil
-+	}
-+
 +	return ks.importKey(key, passphrase)
 +}
 +
- func (ks *KeyStore) importKey(key *Key, passphrase string) (accounts.Account, error) {
- 	a := accounts.Account{Address: key.Address, URL: accounts.URL{Scheme: KeyStoreScheme, Path: ks.storage.JoinPath(keyFileName(key.Address))}}
- 	if err := ks.storage.StoreKey(a.URL.Path, key, passphrase); err != nil {
-@@ -463,6 +497,15 @@ func (ks *KeyStore) importKey(key *Key, passphrase string) (accounts.Account, er
- 	return a, nil
++// ImportSingleExtendedKey imports an extended key setting it in both the PrivateKey and ExtendedKey fields
++// of the Key struct.
++// ImportExtendedKey is used in older version of Status where PrivateKey is set to be the BIP44 key at index 0,
++// and ExtendedKey is the extended key of the BIP44 key at index 1.
++func (ks *KeyStore) ImportSingleExtendedKey(extKey *extkeys.ExtendedKey, passphrase string) (accounts.Account, error) {
++	privateKeyECDSA := extKey.ToECDSA()
++	id := uuid.NewRandom()
++	key := &Key{
++		Id:          id,
++		Address:     crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
++		PrivateKey:  privateKeyECDSA,
++		ExtendedKey: extKey,
++	}
++
++	if ks.cache.hasAddress(key.Address) {
++		return accounts.Account{}, ErrAccountExists
+ 	}
++
+ 	return ks.importKey(key, passphrase)
  }
  
-+func (ks *KeyStore) IncSubAccountIndex(a accounts.Account, passphrase string) error {
-+	a, key, err := ks.getDecryptedKey(a, passphrase)
-+	if err != nil {
-+		return err
-+	}
-+	key.SubAccountIndex++
-+	return ks.storage.StoreKey(a.URL.Path, key, passphrase)
-+}
-+
- // Update changes the passphrase of an existing account.
- func (ks *KeyStore) Update(a accounts.Account, passphrase, newPassphrase string) error {
- 	a, key, err := ks.getDecryptedKey(a, passphrase)
-@@ -486,6 +529,10 @@ func (ks *KeyStore) ImportPreSaleKey(keyJSON []byte, passphrase string) (account
+@@ -488,6 +516,10 @@ func (ks *KeyStore) ImportPreSaleKey(keyJSON []byte, passphrase string) (account
  
  // zeroKey zeroes a private key in memory.
  func zeroKey(k *ecdsa.PrivateKey) {
@@ -166,10 +122,10 @@ index 2918047cc..333fbef6f 100644
  	for i := range b {
  		b[i] = 0
 diff --git a/accounts/keystore/passphrase.go b/accounts/keystore/passphrase.go
-index a0b6cf538..e2512c6e8 100644
+index 89cdf0bfc..5c0cf9c3c 100644
 --- a/accounts/keystore/passphrase.go
 +++ b/accounts/keystore/passphrase.go
-@@ -42,6 +42,7 @@ import (
+@@ -43,6 +43,7 @@ import (
  	"github.com/ethereum/go-ethereum/common/math"
  	"github.com/ethereum/go-ethereum/crypto"
  	"github.com/pborman/uuid"
@@ -177,7 +133,7 @@ index a0b6cf538..e2512c6e8 100644
  	"golang.org/x/crypto/pbkdf2"
  	"golang.org/x/crypto/scrypt"
  )
-@@ -187,15 +188,68 @@ func EncryptKey(key *Key, auth string, scryptN, scryptP int) ([]byte, error) {
+@@ -189,15 +190,67 @@ func EncryptKey(key *Key, auth string, scryptN, scryptP int) ([]byte, error) {
  	if err != nil {
  		return nil, err
  	}
@@ -191,7 +147,6 @@ index a0b6cf538..e2512c6e8 100644
  		key.Id.String(),
  		version,
 +		encryptedExtendedKey,
-+		key.SubAccountIndex,
  	}
  	return json.Marshal(encryptedKeyJSONV3)
  }
@@ -246,18 +201,13 @@ index a0b6cf538..e2512c6e8 100644
  // DecryptKey decrypts a key from a json blob, returning the private key itself.
  func DecryptKey(keyjson []byte, auth string) (*Key, error) {
  	// Parse the json into a simple map to fetch the key version
-@@ -207,19 +261,41 @@ func DecryptKey(keyjson []byte, auth string) (*Key, error) {
+@@ -209,19 +262,36 @@ func DecryptKey(keyjson []byte, auth string) (*Key, error) {
  	var (
  		keyBytes, keyId []byte
  		err             error
 +		extKeyBytes     []byte
 +		extKey          *extkeys.ExtendedKey
  	)
-+
-+	subAccountIndex, ok := m["subaccountindex"].(float64)
-+	if !ok {
-+		subAccountIndex = 0
-+	}
 +
  	if version, ok := m["version"].(string); ok && version == "1" {
  		k := new(encryptedKeyJSONV1)
@@ -288,7 +238,7 @@ index a0b6cf538..e2512c6e8 100644
  	}
  	// Handle any decryption errors and return the key
  	if err != nil {
-@@ -228,9 +304,11 @@ func DecryptKey(keyjson []byte, auth string) (*Key, error) {
+@@ -230,9 +300,10 @@ func DecryptKey(keyjson []byte, auth string) (*Key, error) {
  	key := crypto.ToECDSAUnsafe(keyBytes)
  
  	return &Key{
@@ -299,11 +249,10 @@ index a0b6cf538..e2512c6e8 100644
 +		Address:         crypto.PubkeyToAddress(key.PublicKey),
 +		PrivateKey:      key,
 +		ExtendedKey:     extKey,
-+		SubAccountIndex: uint32(subAccountIndex),
  	}, nil
  }
  
-@@ -316,6 +394,51 @@ func decryptKeyV1(keyProtected *encryptedKeyJSONV1, auth string) (keyBytes []byt
+@@ -318,6 +389,51 @@ func decryptKeyV1(keyProtected *encryptedKeyJSONV1, auth string) (keyBytes []byt
  	return plainText, keyId, err
  }
  
