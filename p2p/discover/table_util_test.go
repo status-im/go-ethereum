@@ -17,8 +17,10 @@
 package discover
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -51,6 +53,23 @@ func nodeAtDistance(base enode.ID, ld int, ip net.IP) *node {
 	var r enr.Record
 	r.Set(enr.IP(ip))
 	return wrapNode(enode.SignNull(&r, idAtDistance(base, ld)))
+}
+
+// nodesAtDistance creates n nodes for which enode.LogDist(base, node.ID()) == ld.
+func nodesAtDistance(base enode.ID, ld int, n int) []*enode.Node {
+	results := make([]*enode.Node, n)
+	for i := range results {
+		results[i] = unwrapNode(nodeAtDistance(base, ld, intIP(i)))
+	}
+	return results
+}
+
+func nodesToRecords(nodes []*enode.Node) []*enr.Record {
+	records := make([]*enr.Record, len(nodes))
+	for i := range nodes {
+		records[i] = nodes[i].Record()
+	}
+	return records
 }
 
 // idAtDistance returns a random hash such that enode.LogDist(a, b) == n
@@ -127,7 +146,6 @@ func (t *pingRecorder) updateRecord(n *enode.Node) {
 func (t *pingRecorder) Self() *enode.Node           { return nullNode }
 func (t *pingRecorder) lookupSelf() []*enode.Node   { return nil }
 func (t *pingRecorder) lookupRandom() []*enode.Node { return nil }
-func (t *pingRecorder) close()                      {}
 
 // ping simulates a ping request.
 func (t *pingRecorder) ping(n *enode.Node) (seq uint64, err error) {
@@ -169,12 +187,47 @@ func hasDuplicates(slice []*node) bool {
 	return false
 }
 
+// checkNodesEqual checks whether the two given node lists contain the same nodes.
+func checkNodesEqual(got, want []*enode.Node) error {
+	if len(got) == len(want) {
+		for i := range got {
+			if !nodeEqual(got[i], want[i]) {
+				goto NotEqual
+			}
+		}
+	}
+	return nil
+
+NotEqual:
+	output := new(bytes.Buffer)
+	fmt.Fprintf(output, "got %d nodes:\n", len(got))
+	for _, n := range got {
+		fmt.Fprintf(output, "  %v %v\n", n.ID(), n)
+	}
+	fmt.Fprintf(output, "want %d:\n", len(want))
+	for _, n := range want {
+		fmt.Fprintf(output, "  %v %v\n", n.ID(), n)
+	}
+	return errors.New(output.String())
+}
+
+func nodeEqual(n1 *enode.Node, n2 *enode.Node) bool {
+	return n1.ID() == n2.ID() && n1.IP().Equal(n2.IP())
+}
+
+func sortByID(nodes []*enode.Node) {
+	sort.Slice(nodes, func(i, j int) bool {
+		return string(nodes[i].ID().Bytes()) < string(nodes[j].ID().Bytes())
+	})
+}
+
 func sortedByDistanceTo(distbase enode.ID, slice []*node) bool {
 	return sort.SliceIsSorted(slice, func(i, j int) bool {
 		return enode.DistCmp(distbase, slice[i].ID(), slice[j].ID()) < 0
 	})
 }
 
+// hexEncPrivkey decodes h as a private key.
 func hexEncPrivkey(h string) *ecdsa.PrivateKey {
 	b, err := hex.DecodeString(h)
 	if err != nil {
@@ -187,6 +240,7 @@ func hexEncPrivkey(h string) *ecdsa.PrivateKey {
 	return key
 }
 
+// hexEncPubkey decodes h as a public key.
 func hexEncPubkey(h string) (ret encPubkey) {
 	b, err := hex.DecodeString(h)
 	if err != nil {
