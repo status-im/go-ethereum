@@ -19,6 +19,7 @@ package math
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"math/big"
 	"testing"
 
@@ -58,6 +59,26 @@ func TestHexOrDecimal256(t *testing.T) {
 		if test.num != nil && (*big.Int)(&num).Cmp(test.num) != 0 {
 			t.Errorf("ParseBig(%q) -> %d, want %d", test.input, (*big.Int)(&num), test.num)
 		}
+	}
+}
+
+func TestHexOrDecimal256JSON(t *testing.T) {
+	s := json.RawMessage(`"42"`)
+	x := json.RawMessage("42")
+	var num, num2 HexOrDecimal256
+	err := json.Unmarshal(s, &num)
+	if err != nil {
+		t.Error("Couldn't parse HexOrDecimal256 from JSON string")
+	}
+	err = json.Unmarshal(x, &num2)
+	if err != nil {
+		t.Error("Couldn't parse HexOrDecimal256 from JSON number")
+	}
+	if (*big.Int)(&num2).Cmp((*big.Int)(&num)) != 0 {
+		t.Error("Parsed numbers don't match")
+	}
+	if (*big.Int)(&num2).Cmp(big.NewInt(42)) != 0 {
+		t.Error("Parsed number is not 42")
 	}
 }
 
