@@ -45,12 +45,23 @@ const (
 	AccessListTxType = 0x01
 	DynamicFeeTxType = 0x02
 	BlobTxType       = 0x03
+
+	ArbitrumDepositTxType         = 100
+	ArbitrumUnsignedTxType        = 101
+	ArbitrumContractTxType        = 102
+	ArbitrumRetryTxType           = 104
+	ArbitrumSubmitRetryableTxType = 105
+	ArbitrumInternalTxType        = 106
+	ArbitrumLegacyTxType          = 120
 )
 
 // Transaction is an Ethereum transaction.
 type Transaction struct {
 	inner TxData    // Consensus contents of a transaction
 	time  time.Time // Time first seen locally (spam avoidance)
+
+	// Arbitrum cache: must be atomically accessed
+	CalldataUnits uint64
 
 	// caches
 	hash atomic.Value
@@ -96,6 +107,8 @@ type TxData interface {
 
 	encode(*bytes.Buffer) error
 	decode([]byte) error
+
+	isFake() bool
 }
 
 // EncodeRLP implements rlp.Encoder
@@ -159,7 +172,7 @@ func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
 			return err
 		}
 		// Now decode the inner transaction.
-		inner, err := tx.decodeTyped(b)
+		inner, err := tx.decodeTyped(b, true)
 		if err == nil {
 			tx.setDecoded(inner, size)
 		}
@@ -181,7 +194,7 @@ func (tx *Transaction) UnmarshalBinary(b []byte) error {
 		return nil
 	}
 	// It's an EIP2718 typed transaction envelope.
-	inner, err := tx.decodeTyped(b)
+	inner, err := tx.decodeTyped(b, false)
 	if err != nil {
 		return err
 	}
@@ -190,23 +203,58 @@ func (tx *Transaction) UnmarshalBinary(b []byte) error {
 }
 
 // decodeTyped decodes a typed transaction from the canonical format.
-func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
+func (tx *Transaction) decodeTyped(b []byte, arbParsing bool) (TxData, error) {
 	if len(b) <= 1 {
 		return nil, errShortTypedTx
 	}
-	var inner TxData
+	if arbParsing {
+		switch b[0] {
+		case ArbitrumDepositTxType:
+			var inner ArbitrumDepositTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumInternalTxType:
+			var inner ArbitrumInternalTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumUnsignedTxType:
+			var inner ArbitrumUnsignedTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumContractTxType:
+			var inner ArbitrumContractTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumRetryTxType:
+			var inner ArbitrumRetryTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumSubmitRetryableTxType:
+			var inner ArbitrumSubmitRetryableTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		}
+	}
 	switch b[0] {
 	case AccessListTxType:
-		inner = new(AccessListTx)
+		var inner AccessListTx
+		err := rlp.DecodeBytes(b[1:], &inner)
+		return &inner, err
 	case DynamicFeeTxType:
-		inner = new(DynamicFeeTx)
+		var inner DynamicFeeTx
+		err := rlp.DecodeBytes(b[1:], &inner)
+		return &inner, err
 	case BlobTxType:
-		inner = new(BlobTx)
+		var inner BlobTx
+		err := rlp.DecodeBytes(b[1:], &inner)
+		return &inner, err
+	case ArbitrumLegacyTxType:
+		var inner ArbitrumLegacyTxData
+		err := rlp.DecodeBytes(b[1:], &inner)
+		return &inner, err
 	default:
 		return nil, ErrTxTypeNotSupported
 	}
-	err := inner.decode(b[1:])
-	return inner, err
 }
 
 // setDecoded sets the inner transaction and size after decoding.
@@ -266,6 +314,10 @@ func (tx *Transaction) Protected() bool {
 // Type returns the transaction type.
 func (tx *Transaction) Type() uint8 {
 	return tx.inner.txType()
+}
+
+func (tx *Transaction) GetInner() TxData {
+	return tx.inner.copy()
 }
 
 // ChainId returns the EIP155 chain ID of the transaction. The return value will always be
@@ -463,6 +515,8 @@ func (tx *Transaction) Hash() common.Hash {
 	var h common.Hash
 	if tx.Type() == LegacyTxType {
 		h = rlpHash(tx.inner)
+	} else if tx.Type() == ArbitrumLegacyTxType {
+		h = tx.inner.(*ArbitrumLegacyTxData).HashOverride
 	} else {
 		h = prefixedRlpHash(tx.Type(), tx.inner)
 	}
@@ -523,6 +577,9 @@ func (s Transactions) EncodeIndex(i int, w *bytes.Buffer) {
 	tx := s[i]
 	if tx.Type() == LegacyTxType {
 		rlp.Encode(w, tx.inner)
+	} else if tx.Type() == ArbitrumLegacyTxType {
+		arbData := tx.inner.(*ArbitrumLegacyTxData)
+		arbData.EncodeOnlyLegacyInto(w)
 	} else {
 		tx.encodeTyped(w)
 	}
@@ -572,6 +629,100 @@ type TxByNonce Transactions
 func (s TxByNonce) Len() int           { return len(s) }
 func (s TxByNonce) Less(i, j int) bool { return s[i].Nonce() < s[j].Nonce() }
 func (s TxByNonce) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+
+// TxWithMinerFee wraps a transaction with its gas price or effective miner gasTipCap
+type TxWithMinerFee struct {
+	tx       *Transaction
+	minerFee *big.Int
+}
+
+// Message is a fully derived transaction and implements core.Message
+//
+// NOTE: In a future PR this will be removed.
+type Message struct {
+	tx        *Transaction
+	TxRunMode MessageRunMode
+
+	to         *common.Address
+	from       common.Address
+	nonce      uint64
+	amount     *big.Int
+	gasLimit   uint64
+	gasPrice   *big.Int
+	gasFeeCap  *big.Int
+	gasTipCap  *big.Int
+	data       []byte
+	accessList AccessList
+	checkNonce bool
+	isFake     bool
+}
+
+type MessageRunMode uint8
+
+const (
+	MessageCommitMode MessageRunMode = iota
+	MessageGasEstimationMode
+	MessageEthcallMode
+)
+
+func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice, gasFeeCap, gasTipCap *big.Int, data []byte, accessList AccessList, checkNonce bool) Message {
+	return Message{
+		from:       from,
+		to:         to,
+		nonce:      nonce,
+		amount:     amount,
+		gasLimit:   gasLimit,
+		gasPrice:   gasPrice,
+		gasFeeCap:  gasFeeCap,
+		gasTipCap:  gasTipCap,
+		data:       data,
+		accessList: accessList,
+		checkNonce: checkNonce,
+		isFake:     false,
+	}
+}
+
+// AsMessage returns the transaction as a core.Message.
+func (tx *Transaction) AsMessage(s Signer, baseFee *big.Int) (Message, error) {
+	msg := Message{
+		tx: tx,
+
+		nonce:      tx.Nonce(),
+		gasLimit:   tx.Gas(),
+		gasPrice:   new(big.Int).Set(tx.GasPrice()),
+		gasFeeCap:  new(big.Int).Set(tx.GasFeeCap()),
+		gasTipCap:  new(big.Int).Set(tx.GasTipCap()),
+		to:         tx.To(),
+		amount:     tx.Value(),
+		data:       tx.Data(),
+		accessList: tx.AccessList(),
+		checkNonce: true,
+		isFake:     tx.inner.isFake(),
+	}
+	// If baseFee provided, set gasPrice to effectiveGasPrice.
+	if baseFee != nil {
+		msg.gasPrice = math.BigMin(msg.gasPrice.Add(msg.gasTipCap, baseFee), msg.gasFeeCap)
+	}
+	var err error
+	msg.from, err = Sender(s, tx)
+	return msg, err
+}
+
+func (m Message) UnderlyingTransaction() *Transaction { return m.tx }
+func (m Message) RunMode() MessageRunMode             { return m.TxRunMode }
+
+func (m Message) From() common.Address   { return m.from }
+func (m Message) To() *common.Address    { return m.to }
+func (m Message) GasPrice() *big.Int     { return m.gasPrice }
+func (m Message) GasFeeCap() *big.Int    { return m.gasFeeCap }
+func (m Message) GasTipCap() *big.Int    { return m.gasTipCap }
+func (m Message) Value() *big.Int        { return m.amount }
+func (m Message) Gas() uint64            { return m.gasLimit }
+func (m Message) Nonce() uint64          { return m.nonce }
+func (m Message) Data() []byte           { return m.data }
+func (m Message) AccessList() AccessList { return m.accessList }
+func (m Message) CheckNonce() bool       { return m.checkNonce }
+func (m Message) IsFake() bool           { return m.isFake }
 
 // copyAddressPtr copies an address.
 func copyAddressPtr(a *common.Address) *common.Address {
