@@ -408,7 +408,15 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 				return err
 			}
 		}
-
+	case OptimismDepositTxType:
+		inner = &OptimismDepositTx{
+			ChainID: big.NewInt(0),
+			From:    *dec.From,
+			To:      *dec.To,
+			Mint:    new(big.Int),
+			Value:   (*big.Int)(dec.Value),
+			Data:    *dec.Data,
+		}
 	default:
 		return ErrTxTypeNotSupported
 	}
