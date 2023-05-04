@@ -58,7 +58,7 @@ func TestKeyStore(t *testing.T) {
 	if err := ks.Update(a, "foo", "bar"); err != nil {
 		t.Errorf("Update error: %v", err)
 	}
-	if err := ks.Delete(a, "bar"); err != nil {
+	if err := ks.Delete(a); err != nil {
 		t.Errorf("Delete error: %v", err)
 	}
 	if common.FileExist(a.URL.Path) {
@@ -322,7 +322,7 @@ func TestWalletNotifications(t *testing.T) {
 				account = a
 				break
 			}
-			if err := ks.Delete(account, ""); err != nil {
+			if err := ks.Delete(account); err != nil {
 				t.Fatalf("failed to delete test account: %v", err)
 			}
 			delete(live, account.Address)

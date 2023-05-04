@@ -57,7 +57,7 @@ func TestAccountManagement(t *testing.T) {
 		t.Fatalf("Failed to update account: %v", err)
 	}
 	// Delete the account updated above from the local keystore
-	if err := ks.Delete(newAcc, "Update password"); err != nil {
+	if err := ks.Delete(newAcc); err != nil {
 		t.Fatalf("Failed to delete account: %v", err)
 	}
 	// Import back the account we've exported (and then deleted) above with yet
