@@ -247,7 +247,12 @@ func (ks *KeyStore) Delete(a accounts.Account) error {
 	// The order is crucial here. The key is dropped from the
 	// cache after the file is gone so that a reload happening in
 	// between won't insert it into the cache again.
-	err := os.Remove(a.URL.Path)
+	a, err := ks.Find(a)
+	if err != nil {
+		return err
+	}
+
+	err = os.Remove(a.URL.Path)
 	if err == nil {
 		ks.cache.delete(a)
 		ks.refreshWallets()
