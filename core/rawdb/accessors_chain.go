@@ -638,12 +638,14 @@ func ReadReceipts(db ethdb.Reader, hash common.Hash, number uint64, config *para
 	}
 	header := ReadHeader(db, hash, number)
 	var baseFee *big.Int
+	var time uint64
 	if header == nil {
 		baseFee = big.NewInt(0)
 	} else {
 		baseFee = header.BaseFee
+		time = header.Time
 	}
-	if err := receipts.DeriveFields(config, hash, number, baseFee, body.Transactions); err != nil {
+	if err := receipts.DeriveFields(config, hash, number, time, baseFee, body.Transactions); err != nil {
 		log.Error("Failed to derive block receipts fields", "hash", hash, "number", number, "err", err)
 		return nil
 	}
@@ -681,6 +683,16 @@ type storedReceiptRLP struct {
 	PostStateOrStatus []byte
 	CumulativeGasUsed uint64
 	Logs              []*types.Log
+	ContractAddress   *common.Address `rlp:"optional"` // set on new versions if an Arbitrum tx type
+
+	// Remaining fields are declared to allow the receipt RLP to be parsed without errors.
+	// However, they must not be used as they may not be populated correctly due to multiple receipt formats
+	// being combined into a single list of optional fields which can be mistaken for each other.
+	// DepositNonce (*uint64) from Regolith deposit tx receipts will be parsed into L1GasUsed
+	L1GasUsed  *big.Int `rlp:"optional"` // OVM legacy
+	L1GasPrice *big.Int `rlp:"optional"` // OVM legacy
+	L1Fee      *big.Int `rlp:"optional"` // OVM legacy
+	FeeScalar  string   `rlp:"optional"` // OVM legacy
 }
 
 // ReceiptLogs is a barebone version of ReceiptForStorage which only keeps

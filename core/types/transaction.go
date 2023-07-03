@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -45,6 +46,14 @@ const (
 	LegacyTxType = iota
 	AccessListTxType
 	DynamicFeeTxType
+	ArbitrumDepositTxType         = 100
+	ArbitrumUnsignedTxType        = 101
+	ArbitrumContractTxType        = 102
+	ArbitrumRetryTxType           = 104
+	ArbitrumSubmitRetryableTxType = 105
+	ArbitrumInternalTxType        = 106
+	ArbitrumLegacyTxType          = 120
+	OptimismDepositTxType         = 126
 )
 
 // Transaction is an Ethereum transaction.
@@ -52,10 +61,16 @@ type Transaction struct {
 	inner TxData    // Consensus contents of a transaction
 	time  time.Time // Time first seen locally (spam avoidance)
 
+	// Arbitrum cache: must be atomically accessed
+	CalldataUnits uint64
+
 	// caches
 	hash atomic.Value
 	size atomic.Value
 	from atomic.Value
+
+	// cache of RollupGasData details to compute the gas the tx takes on L1 for its share of rollup data
+	rollupGas atomic.Value
 }
 
 // NewTx creates a new transaction.
@@ -63,6 +78,14 @@ func NewTx(inner TxData) *Transaction {
 	tx := new(Transaction)
 	tx.setDecoded(inner.copy(), 0)
 	return tx
+}
+
+func isTypeArbitrum(txType uint8) bool {
+	switch txType {
+	case ArbitrumDepositTxType, ArbitrumUnsignedTxType, ArbitrumContractTxType, ArbitrumRetryTxType, ArbitrumSubmitRetryableTxType, ArbitrumInternalTxType, ArbitrumLegacyTxType:
+		return true
+	}
+	return false
 }
 
 // TxData is the underlying data of a transaction.
@@ -82,6 +105,8 @@ type TxData interface {
 	value() *big.Int
 	nonce() uint64
 	to() *common.Address
+	isFake() bool
+	isSystemTx() bool
 
 	rawSignatureValues() (v, r, s *big.Int)
 	setSignatureValues(chainID, v, r, s *big.Int)
@@ -148,7 +173,7 @@ func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
 		if b, err = s.Bytes(); err != nil {
 			return err
 		}
-		inner, err := tx.decodeTyped(b)
+		inner, err := tx.decodeTyped(b, true)
 		if err == nil {
 			tx.setDecoded(inner, uint64(len(b)))
 		}
@@ -170,7 +195,7 @@ func (tx *Transaction) UnmarshalBinary(b []byte) error {
 		return nil
 	}
 	// It's an EIP2718 typed transaction envelope.
-	inner, err := tx.decodeTyped(b)
+	inner, err := tx.decodeTyped(b, false)
 	if err != nil {
 		return err
 	}
@@ -179,9 +204,45 @@ func (tx *Transaction) UnmarshalBinary(b []byte) error {
 }
 
 // decodeTyped decodes a typed transaction from the canonical format.
-func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
+func (tx *Transaction) decodeTyped(b []byte, l2Parsing bool) (TxData, error) {
 	if len(b) <= 1 {
 		return nil, errShortTypedTx
+	}
+	if l2Parsing {
+		switch b[0] {
+		case ArbitrumDepositTxType:
+			var inner ArbitrumDepositTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumInternalTxType:
+			var inner ArbitrumInternalTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumUnsignedTxType:
+			var inner ArbitrumUnsignedTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumContractTxType:
+			var inner ArbitrumContractTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumRetryTxType:
+			var inner ArbitrumRetryTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumSubmitRetryableTxType:
+			var inner ArbitrumSubmitRetryableTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case ArbitrumLegacyTxType:
+			var inner ArbitrumLegacyTxData
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		case OptimismDepositTxType:
+			var inner OptimismDepositTx
+			err := rlp.DecodeBytes(b[1:], &inner)
+			return &inner, err
+		}
 	}
 	switch b[0] {
 	case AccessListTxType:
@@ -256,6 +317,10 @@ func (tx *Transaction) Type() uint8 {
 	return tx.inner.txType()
 }
 
+func (tx *Transaction) GetInner() TxData {
+	return tx.inner.copy()
+}
+
 // ChainId returns the EIP155 chain ID of the transaction. The return value will always be
 // non-nil. For legacy transactions which are not replay-protected, the return value is
 // zero.
@@ -287,10 +352,54 @@ func (tx *Transaction) Value() *big.Int { return new(big.Int).Set(tx.inner.value
 // Nonce returns the sender account nonce of the transaction.
 func (tx *Transaction) Nonce() uint64 { return tx.inner.nonce() }
 
+// EffectiveNonce returns the nonce that was actually used as part of transaction execution
+// Returns nil if the effective nonce is not known
+func (tx *Transaction) EffectiveNonce() *uint64 {
+	type txWithEffectiveNonce interface {
+		effectiveNonce() *uint64
+	}
+
+	if itx, ok := tx.inner.(txWithEffectiveNonce); ok {
+		return itx.effectiveNonce()
+	}
+	nonce := tx.inner.nonce()
+	return &nonce
+}
+
 // To returns the recipient address of the transaction.
 // For contract-creation transactions, To returns nil.
 func (tx *Transaction) To() *common.Address {
 	return copyAddressPtr(tx.inner.to())
+}
+
+// SourceHash returns the hash that uniquely identifies the source of the deposit tx,
+// e.g. a user deposit event, or a L1 info deposit included in a specific L2 block height.
+// Non-deposit transactions return a zeroed hash.
+func (tx *Transaction) SourceHash() common.Hash {
+	if dep, ok := tx.inner.(*OptimismDepositTx); ok {
+		return dep.SourceHash
+	}
+	return common.Hash{}
+}
+
+// Mint returns the ETH to mint in the deposit tx.
+// This returns nil if there is nothing to mint, or if this is not a deposit tx.
+func (tx *Transaction) Mint() *big.Int {
+	if dep, ok := tx.inner.(*OptimismDepositTx); ok {
+		return dep.Mint
+	}
+	return nil
+}
+
+// IsDepositTx returns true if the transaction is a deposit tx type.
+func (tx *Transaction) IsDepositTx() bool {
+	return tx.Type() == OptimismDepositTxType
+}
+
+// IsSystemTx returns true for deposits that are system transactions. These transactions
+// are executed in an unmetered environment & do not contribute to the block gas limit.
+func (tx *Transaction) IsSystemTx() bool {
+	return tx.inner.isSystemTx()
 }
 
 // Cost returns gas * gasPrice + value.
@@ -298,6 +407,30 @@ func (tx *Transaction) Cost() *big.Int {
 	total := new(big.Int).Mul(tx.GasPrice(), new(big.Int).SetUint64(tx.Gas()))
 	total.Add(total, tx.Value())
 	return total
+}
+
+// RollupDataGas is the amount of gas it takes to confirm the tx on L1 as a rollup
+func (tx *Transaction) RollupDataGas() RollupGasData {
+	if tx.Type() == OptimismDepositTxType {
+		return RollupGasData{}
+	}
+	if v := tx.rollupGas.Load(); v != nil {
+		return v.(RollupGasData)
+	}
+	data, err := tx.MarshalBinary()
+	if err != nil { // Silent error, invalid txs will not be marshalled/unmarshalled for batch submission anyway.
+		log.Error("failed to encode tx for L1 cost computation", "err", err)
+	}
+	var out RollupGasData
+	for _, byt := range data {
+		if byt == 0 {
+			out.Zeroes++
+		} else {
+			out.Ones++
+		}
+	}
+	tx.rollupGas.Store(out)
+	return out
 }
 
 // RawSignatureValues returns the V, R, S signature values of the transaction.
@@ -330,6 +463,9 @@ func (tx *Transaction) GasTipCapIntCmp(other *big.Int) int {
 // Note: if the effective gasTipCap is negative, this method returns both error
 // the actual negative value, _and_ ErrGasFeeCapTooLow
 func (tx *Transaction) EffectiveGasTip(baseFee *big.Int) (*big.Int, error) {
+	if tx.Type() == OptimismDepositTxType {
+		return new(big.Int), nil
+	}
 	if baseFee == nil {
 		return tx.GasTipCap(), nil
 	}
@@ -373,6 +509,8 @@ func (tx *Transaction) Hash() common.Hash {
 	var h common.Hash
 	if tx.Type() == LegacyTxType {
 		h = rlpHash(tx.inner)
+	} else if tx.Type() == ArbitrumLegacyTxType {
+		h = tx.inner.(*ArbitrumLegacyTxData).HashOverride
 	} else {
 		h = prefixedRlpHash(tx.Type(), tx.inner)
 	}
@@ -422,6 +560,9 @@ func (s Transactions) EncodeIndex(i int, w *bytes.Buffer) {
 	tx := s[i]
 	if tx.Type() == LegacyTxType {
 		rlp.Encode(w, tx.inner)
+	} else if tx.Type() == ArbitrumLegacyTxType {
+		arbData := tx.inner.(*ArbitrumLegacyTxData)
+		arbData.EncodeOnlyLegacyInto(w)
 	} else {
 		tx.encodeTyped(w)
 	}
