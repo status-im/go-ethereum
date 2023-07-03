@@ -19,10 +19,12 @@ package types
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 // txJSON is the JSON representation of transactions.
@@ -42,12 +44,18 @@ type txJSON struct {
 	S                    *hexutil.Big    `json:"s"`
 	To                   *common.Address `json:"to"`
 
+	// Optimism Deposit transaction fields
+	SourceHash *common.Hash    `json:"sourceHash,omitempty"`
+	From       *common.Address `json:"from,omitempty"`
+	Mint       *hexutil.Big    `json:"mint,omitempty"`
+	IsSystemTx *bool           `json:"isSystemTx,omitempty"`
+
 	// Access list transaction fields:
 	ChainID    *hexutil.Big `json:"chainId,omitempty"`
 	AccessList *AccessList  `json:"accessList,omitempty"`
 
 	// Arbitrum fields:
-	From                *common.Address `json:"from,omitempty"`                // Contract SubmitRetryable Unsigned Retry
+	//From                *common.Address `json:"from,omitempty"`                // Contract SubmitRetryable Unsigned Retry
 	RequestId           *common.Hash    `json:"requestId,omitempty"`           // Contract SubmitRetryable Deposit
 	TicketId            *common.Hash    `json:"ticketId,omitempty"`            // Retry
 	MaxRefund           *hexutil.Big    `json:"maxRefund,omitempty"`           // Retry
@@ -85,6 +93,17 @@ func (t *Transaction) MarshalJSON() ([]byte, error) {
 	enc.R = (*hexutil.Big)(common.Big0)
 	enc.S = (*hexutil.Big)(common.Big0)
 
+	// Arbitrum: set to 0 for compatibility
+	var zero uint64
+	enc.Nonce = (*hexutil.Uint64)(&zero)
+	enc.Gas = (*hexutil.Uint64)(&zero)
+	enc.GasPrice = (*hexutil.Big)(common.Big0)
+	enc.Value = (*hexutil.Big)(common.Big0)
+	enc.Data = (*hexutil.Bytes)(&[]byte{})
+	enc.V = (*hexutil.Big)(common.Big0)
+	enc.R = (*hexutil.Big)(common.Big0)
+	enc.S = (*hexutil.Big)(common.Big0)
+
 	// Other fields are set conditionally depending on tx type.
 	switch tx := t.inner.(type) {
 	case *LegacyTx:
@@ -110,88 +129,100 @@ func (t *Transaction) MarshalJSON() ([]byte, error) {
 		enc.R = (*hexutil.Big)(tx.R)
 		enc.S = (*hexutil.Big)(tx.S)
 	case *DynamicFeeTx:
-		enc.ChainID = (*hexutil.Big)(tx.ChainID)
-		enc.AccessList = &tx.AccessList
-		enc.Nonce = (*hexutil.Uint64)(&tx.Nonce)
-		enc.Gas = (*hexutil.Uint64)(&tx.Gas)
-		enc.MaxFeePerGas = (*hexutil.Big)(tx.GasFeeCap)
-		enc.MaxPriorityFeePerGas = (*hexutil.Big)(tx.GasTipCap)
-		enc.Value = (*hexutil.Big)(tx.Value)
-		enc.Data = (*hexutil.Bytes)(&tx.Data)
-		enc.To = t.To()
-		enc.V = (*hexutil.Big)(tx.V)
-		enc.R = (*hexutil.Big)(tx.R)
-		enc.S = (*hexutil.Big)(tx.S)
+		enc.ChainID = (*hexutil.Big)(itx.ChainID)
+		enc.AccessList = &itx.AccessList
+		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
+		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
+		enc.MaxFeePerGas = (*hexutil.Big)(itx.GasFeeCap)
+		enc.MaxPriorityFeePerGas = (*hexutil.Big)(itx.GasTipCap)
+		enc.Value = (*hexutil.Big)(itx.Value)
+		enc.Data = (*hexutil.Bytes)(&itx.Data)
+		enc.To = tx.To()
+		enc.V = (*hexutil.Big)(itx.V)
+		enc.R = (*hexutil.Big)(itx.R)
+		enc.S = (*hexutil.Big)(itx.S)
 	case *ArbitrumLegacyTxData:
-		enc.Nonce = (*hexutil.Uint64)(&tx.Nonce)
-		enc.Gas = (*hexutil.Uint64)(&tx.Gas)
-		enc.GasPrice = (*hexutil.Big)(tx.GasPrice)
-		enc.Value = (*hexutil.Big)(tx.Value)
-		enc.Data = (*hexutil.Bytes)(&tx.Data)
-		enc.To = t.To()
-		enc.V = (*hexutil.Big)(tx.V)
-		enc.R = (*hexutil.Big)(tx.R)
-		enc.S = (*hexutil.Big)(tx.S)
-		enc.EffectiveGasPrice = (*hexutil.Uint64)(&tx.EffectiveGasPrice)
-		enc.L1BlockNumber = (*hexutil.Uint64)(&tx.L1BlockNumber)
-		enc.From = tx.Sender
+		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
+		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
+		enc.GasPrice = (*hexutil.Big)(itx.GasPrice)
+		enc.Value = (*hexutil.Big)(itx.Value)
+		enc.Data = (*hexutil.Bytes)(&itx.Data)
+		enc.To = tx.To()
+		enc.V = (*hexutil.Big)(itx.V)
+		enc.R = (*hexutil.Big)(itx.R)
+		enc.S = (*hexutil.Big)(itx.S)
+		enc.EffectiveGasPrice = (*hexutil.Uint64)(&itx.EffectiveGasPrice)
+		enc.L1BlockNumber = (*hexutil.Uint64)(&itx.L1BlockNumber)
+		enc.From = itx.Sender
 	case *ArbitrumInternalTx:
-		enc.ChainID = (*hexutil.Big)(tx.ChainId)
-		enc.Data = (*hexutil.Bytes)(&tx.Data)
+		enc.ChainID = (*hexutil.Big)(itx.ChainId)
+		enc.Data = (*hexutil.Bytes)(&itx.Data)
 	case *ArbitrumDepositTx:
-		enc.RequestId = &tx.L1RequestId
-		enc.From = &tx.From
-		enc.ChainID = (*hexutil.Big)(tx.ChainId)
-		enc.Value = (*hexutil.Big)(tx.Value)
-		enc.To = t.To()
+		enc.RequestId = &itx.L1RequestId
+		enc.From = &itx.From
+		enc.ChainID = (*hexutil.Big)(itx.ChainId)
+		enc.Value = (*hexutil.Big)(itx.Value)
+		enc.To = tx.To()
 	case *ArbitrumUnsignedTx:
-		enc.From = (*common.Address)(&tx.From)
-		enc.ChainID = (*hexutil.Big)(tx.ChainId)
-		enc.Nonce = (*hexutil.Uint64)(&tx.Nonce)
-		enc.Gas = (*hexutil.Uint64)(&tx.Gas)
-		enc.MaxFeePerGas = (*hexutil.Big)(tx.GasFeeCap)
-		enc.Value = (*hexutil.Big)(tx.Value)
-		enc.Data = (*hexutil.Bytes)(&tx.Data)
-		enc.To = t.To()
+		enc.From = (*common.Address)(&itx.From)
+		enc.ChainID = (*hexutil.Big)(itx.ChainId)
+		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
+		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
+		enc.MaxFeePerGas = (*hexutil.Big)(itx.GasFeeCap)
+		enc.Value = (*hexutil.Big)(itx.Value)
+		enc.Data = (*hexutil.Bytes)(&itx.Data)
+		enc.To = tx.To()
 	case *ArbitrumContractTx:
-		enc.RequestId = &tx.RequestId
-		enc.From = (*common.Address)(&tx.From)
-		enc.ChainID = (*hexutil.Big)(tx.ChainId)
-		enc.Gas = (*hexutil.Uint64)(&tx.Gas)
-		enc.MaxFeePerGas = (*hexutil.Big)(tx.GasFeeCap)
-		enc.Value = (*hexutil.Big)(tx.Value)
-		enc.Data = (*hexutil.Bytes)(&tx.Data)
-		enc.To = t.To()
+		enc.RequestId = &itx.RequestId
+		enc.From = (*common.Address)(&itx.From)
+		enc.ChainID = (*hexutil.Big)(itx.ChainId)
+		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
+		enc.MaxFeePerGas = (*hexutil.Big)(itx.GasFeeCap)
+		enc.Value = (*hexutil.Big)(itx.Value)
+		enc.Data = (*hexutil.Bytes)(&itx.Data)
+		enc.To = tx.To()
 	case *ArbitrumRetryTx:
-		enc.From = (*common.Address)(&tx.From)
-		enc.TicketId = &tx.TicketId
-		enc.RefundTo = &tx.RefundTo
-		enc.ChainID = (*hexutil.Big)(tx.ChainId)
-		enc.Nonce = (*hexutil.Uint64)(&tx.Nonce)
-		enc.Gas = (*hexutil.Uint64)(&tx.Gas)
-		enc.MaxFeePerGas = (*hexutil.Big)(tx.GasFeeCap)
-		enc.Value = (*hexutil.Big)(tx.Value)
-		enc.Data = (*hexutil.Bytes)(&tx.Data)
-		enc.MaxRefund = (*hexutil.Big)(tx.MaxRefund)
-		enc.SubmissionFeeRefund = (*hexutil.Big)(tx.SubmissionFeeRefund)
-		enc.To = t.To()
+		enc.From = (*common.Address)(&itx.From)
+		enc.TicketId = &itx.TicketId
+		enc.RefundTo = &itx.RefundTo
+		enc.ChainID = (*hexutil.Big)(itx.ChainId)
+		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
+		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
+		enc.MaxFeePerGas = (*hexutil.Big)(itx.GasFeeCap)
+		enc.Value = (*hexutil.Big)(itx.Value)
+		enc.Data = (*hexutil.Bytes)(&itx.Data)
+		enc.MaxRefund = (*hexutil.Big)(itx.MaxRefund)
+		enc.SubmissionFeeRefund = (*hexutil.Big)(itx.SubmissionFeeRefund)
+		enc.To = tx.To()
 	case *ArbitrumSubmitRetryableTx:
-		enc.RequestId = &tx.RequestId
-		enc.From = &tx.From
-		enc.L1BaseFee = (*hexutil.Big)(tx.L1BaseFee)
-		enc.DepositValue = (*hexutil.Big)(tx.DepositValue)
-		enc.Beneficiary = &tx.Beneficiary
-		enc.RefundTo = &tx.FeeRefundAddr
-		enc.MaxSubmissionFee = (*hexutil.Big)(tx.MaxSubmissionFee)
-		enc.ChainID = (*hexutil.Big)(tx.ChainId)
-		enc.Gas = (*hexutil.Uint64)(&tx.Gas)
-		enc.MaxFeePerGas = (*hexutil.Big)(tx.GasFeeCap)
-		enc.RetryTo = tx.RetryTo
-		enc.RetryValue = (*hexutil.Big)(tx.RetryValue)
-		enc.RetryData = (*hexutil.Bytes)(&tx.RetryData)
-		data := tx.data()
+		enc.RequestId = &itx.RequestId
+		enc.From = &itx.From
+		enc.L1BaseFee = (*hexutil.Big)(itx.L1BaseFee)
+		enc.DepositValue = (*hexutil.Big)(itx.DepositValue)
+		enc.Beneficiary = &itx.Beneficiary
+		enc.RefundTo = &itx.FeeRefundAddr
+		enc.MaxSubmissionFee = (*hexutil.Big)(itx.MaxSubmissionFee)
+		enc.ChainID = (*hexutil.Big)(itx.ChainId)
+		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
+		enc.MaxFeePerGas = (*hexutil.Big)(itx.GasFeeCap)
+		enc.RetryTo = itx.RetryTo
+		enc.RetryValue = (*hexutil.Big)(itx.RetryValue)
+		enc.RetryData = (*hexutil.Bytes)(&itx.RetryData)
+		data := itx.data()
 		enc.Data = (*hexutil.Bytes)(&data)
-		enc.To = t.To()
+		enc.To = tx.To()
+	case *OptimismDepositTx:
+		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
+		enc.Value = (*hexutil.Big)(itx.Value)
+		enc.Data = (*hexutil.Bytes)(&itx.Data)
+		enc.To = tx.To()
+		enc.SourceHash = &itx.SourceHash
+		enc.From = &itx.From
+		if itx.Mint != nil {
+			enc.Mint = (*hexutil.Big)(itx.Mint)
+		}
+		enc.IsSystemTx = &itx.IsSystemTransaction
+		// other fields will show up as null.
 	}
 	return json.Marshal(&enc)
 }
@@ -625,13 +656,52 @@ func (t *Transaction) UnmarshalJSON(input []byte) error {
 			RetryData:        *dec.RetryData,
 		}
 	case OptimismDepositTxType:
-		inner = &OptimismDepositTx{
-			ChainID: big.NewInt(0),
-			From:    *dec.From,
-			To:      *dec.To,
-			Mint:    new(big.Int),
-			Value:   (*big.Int)(dec.Value),
-			Data:    *dec.Data,
+		if dec.AccessList != nil || dec.MaxFeePerGas != nil ||
+			dec.MaxPriorityFeePerGas != nil {
+			return errors.New("unexpected field(s) in deposit transaction")
+		}
+		if dec.GasPrice != nil && dec.GasPrice.ToInt().Cmp(common.Big0) != 0 {
+			return errors.New("deposit transaction GasPrice must be 0")
+		}
+		if (dec.V != nil && dec.V.ToInt().Cmp(common.Big0) != 0) ||
+			(dec.R != nil && dec.R.ToInt().Cmp(common.Big0) != 0) ||
+			(dec.S != nil && dec.S.ToInt().Cmp(common.Big0) != 0) {
+			return errors.New("deposit transaction signature must be 0 or unset")
+		}
+		var itx OptimismDepositTx
+		inner = &itx
+		if dec.To != nil {
+			itx.To = dec.To
+		}
+		if dec.Gas == nil {
+			return errors.New("missing required field 'gas' for txdata")
+		}
+		itx.Gas = uint64(*dec.Gas)
+		if dec.Value == nil {
+			return errors.New("missing required field 'value' in transaction")
+		}
+		itx.Value = (*big.Int)(dec.Value)
+		// mint may be omitted or nil if there is nothing to mint.
+		itx.Mint = (*big.Int)(dec.Mint)
+		if dec.Data == nil {
+			return errors.New("missing required field 'input' in transaction")
+		}
+		itx.Data = *dec.Data
+		if dec.From == nil {
+			return errors.New("missing required field 'from' in transaction")
+		}
+		itx.From = *dec.From
+		if dec.SourceHash == nil {
+			return errors.New("missing required field 'sourceHash' in transaction")
+		}
+		itx.SourceHash = *dec.SourceHash
+		// IsSystemTx may be omitted. Defaults to false.
+		if dec.IsSystemTx != nil {
+			itx.IsSystemTransaction = *dec.IsSystemTx
+		}
+
+		if dec.Nonce != nil {
+			inner = &optimismDepositTxWithNonce{OptimismDepositTx: itx, EffectiveNonce: uint64(*dec.Nonce)}
 		}
 	default:
 		return ErrTxTypeNotSupported
@@ -643,3 +713,15 @@ func (t *Transaction) UnmarshalJSON(input []byte) error {
 	// TODO: check hash here?
 	return nil
 }
+
+type optimismDepositTxWithNonce struct {
+	OptimismDepositTx
+	EffectiveNonce uint64
+}
+
+// EncodeRLP ensures that RLP encoding this transaction excludes the nonce. Otherwise, the tx Hash would change
+func (tx *optimismDepositTxWithNonce) EncodeRLP(w io.Writer) error {
+	return rlp.Encode(w, tx.OptimismDepositTx)
+}
+
+func (tx *optimismDepositTxWithNonce) effectiveNonce() *uint64 { return &tx.EffectiveNonce }
