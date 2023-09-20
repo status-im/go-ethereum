@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -40,6 +42,17 @@ func (tx *LegacyTx) isFake() bool     { return false }
 func (tx *AccessListTx) isFake() bool { return false }
 func (tx *DynamicFeeTx) isFake() bool { return false }
 func (tx *BlobTx) isFake() bool       { return false }
+
+func effectiveGasPrice(dst *big.Int, baseFee *big.Int, gasFeeCap *big.Int, gasTipCap *big.Int) *big.Int {
+	if baseFee == nil {
+		return dst.Set(gasFeeCap)
+	}
+	tip := dst.Sub(gasFeeCap, baseFee)
+	if tip.Cmp(gasTipCap) > 0 {
+		tip.Set(gasTipCap)
+	}
+	return tip.Add(tip, baseFee)
+}
 
 type ArbitrumUnsignedTx struct {
 	ChainId *big.Int
@@ -102,6 +115,18 @@ func (tx *ArbitrumUnsignedTx) setSignatureValues(chainID, v, r, s *big.Int) {
 
 }
 
+func (tx *ArbitrumUnsignedTx) encode(b *bytes.Buffer) error {
+	return rlp.Encode(b, tx)
+}
+
+func (tx *ArbitrumUnsignedTx) decode(input []byte) error {
+	return rlp.DecodeBytes(input, tx)
+}
+
+func (tx *ArbitrumUnsignedTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	return effectiveGasPrice(dst, baseFee, tx.GasFeeCap, tx.gasTipCap())
+}
+
 type ArbitrumContractTx struct {
 	ChainId   *big.Int
 	RequestId common.Hash
@@ -158,6 +183,18 @@ func (tx *ArbitrumContractTx) rawSignatureValues() (v, r, s *big.Int) {
 }
 func (tx *ArbitrumContractTx) setSignatureValues(chainID, v, r, s *big.Int) {}
 func (tx *ArbitrumContractTx) isFake() bool                                 { return true }
+
+func (tx *ArbitrumContractTx) encode(b *bytes.Buffer) error {
+	return rlp.Encode(b, tx)
+}
+
+func (tx *ArbitrumContractTx) decode(input []byte) error {
+	return rlp.DecodeBytes(input, tx)
+}
+
+func (tx *ArbitrumContractTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	return effectiveGasPrice(dst, baseFee, tx.GasFeeCap, tx.gasTipCap())
+}
 
 type ArbitrumRetryTx struct {
 	ChainId *big.Int
@@ -229,6 +266,18 @@ func (tx *ArbitrumRetryTx) rawSignatureValues() (v, r, s *big.Int) {
 }
 func (tx *ArbitrumRetryTx) setSignatureValues(chainID, v, r, s *big.Int) {}
 func (tx *ArbitrumRetryTx) isFake() bool                                 { return true }
+
+func (tx *ArbitrumRetryTx) encode(b *bytes.Buffer) error {
+	return rlp.Encode(b, tx)
+}
+
+func (tx *ArbitrumRetryTx) decode(input []byte) error {
+	return rlp.DecodeBytes(input, tx)
+}
+
+func (tx *ArbitrumRetryTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	return effectiveGasPrice(dst, baseFee, tx.GasFeeCap, tx.gasTipCap())
+}
 
 type ArbitrumSubmitRetryableTx struct {
 	ChainId   *big.Int
@@ -336,6 +385,18 @@ func (tx *ArbitrumSubmitRetryableTx) data() []byte {
 	return data
 }
 
+func (tx *ArbitrumSubmitRetryableTx) encode(b *bytes.Buffer) error {
+	return rlp.Encode(b, tx)
+}
+
+func (tx *ArbitrumSubmitRetryableTx) decode(input []byte) error {
+	return rlp.DecodeBytes(input, tx)
+}
+
+func (tx *ArbitrumSubmitRetryableTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	return effectiveGasPrice(dst, baseFee, tx.GasFeeCap, tx.gasTipCap())
+}
+
 type ArbitrumDepositTx struct {
 	ChainId     *big.Int
 	L1RequestId common.Hash
@@ -385,6 +446,18 @@ func (d *ArbitrumDepositTx) setSignatureValues(chainID, v, r, s *big.Int) {
 
 }
 
+func (tx *ArbitrumDepositTx) encode(b *bytes.Buffer) error {
+	return rlp.Encode(b, tx)
+}
+
+func (tx *ArbitrumDepositTx) decode(input []byte) error {
+	return rlp.DecodeBytes(input, tx)
+}
+
+func (tx *ArbitrumDepositTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	return bigZero
+}
+
 type ArbitrumInternalTx struct {
 	ChainId *big.Int
 	Data    []byte
@@ -419,6 +492,18 @@ func (d *ArbitrumInternalTx) rawSignatureValues() (v, r, s *big.Int) {
 
 func (d *ArbitrumInternalTx) setSignatureValues(chainID, v, r, s *big.Int) {
 
+}
+
+func (tx *ArbitrumInternalTx) encode(b *bytes.Buffer) error {
+	return rlp.Encode(b, tx)
+}
+
+func (tx *ArbitrumInternalTx) decode(input []byte) error {
+	return rlp.DecodeBytes(input, tx)
+}
+
+func (tx *ArbitrumInternalTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	return bigZero
 }
 
 type HeaderInfo struct {

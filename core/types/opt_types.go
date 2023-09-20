@@ -1,9 +1,11 @@
 package types
 
 import (
+	"bytes"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 type OptimismDepositTx struct {
@@ -62,4 +64,16 @@ func (d *OptimismDepositTx) rawSignatureValues() (v, r, s *big.Int) {
 
 func (d *OptimismDepositTx) setSignatureValues(chainID, v, r, s *big.Int) {
 
+}
+
+func (tx *OptimismDepositTx) encode(b *bytes.Buffer) error {
+	return rlp.Encode(b, tx)
+}
+
+func (tx *OptimismDepositTx) decode(input []byte) error {
+	return rlp.DecodeBytes(input, tx)
+}
+
+func (tx *OptimismDepositTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	return bigZero
 }
