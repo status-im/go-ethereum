@@ -130,6 +130,15 @@ type logger struct {
 	h   *swapHandler
 }
 
+// Output is a convenient alias for write, allowing for the modification of
+// the callDepth (number of stack frames to skip).
+// callDepth influences the reported line number of the log message.
+// A callDepth of zero reports the immediate caller of Output.
+// Non-zero callDepth skips as many stack frames.
+func (l *logger) Output(msg string, lvl Lvl, callDepth int, ctx ...interface{}) {
+	l.write(msg, lvl, ctx, callDepth+skipLevel)
+}
+
 func (l *logger) write(msg string, lvl Lvl, ctx []interface{}, skip int) {
 	l.h.Log(&Record{
 		Time: time.Now(),
