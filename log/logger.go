@@ -123,6 +123,8 @@ type Logger interface {
 	Warn(msg string, ctx ...interface{})
 	Error(msg string, ctx ...interface{})
 	Crit(msg string, ctx ...interface{})
+
+	Output(msg string, lvl Lvl, callDepth int, ctx ...interface{})
 }
 
 type logger struct {
