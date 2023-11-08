@@ -120,6 +120,14 @@ func (l *logger) Crit(msg string, ctx ...interface{}) {
 	l.flush()
 }
 
+func (l *logger) Output(msg string, lvl log.Lvl, callDepth int, ctx ...interface{}) {
+	l.t.Helper()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.l.Output(msg, lvl, callDepth, ctx...)
+	l.flush()
+}
+
 func (l *logger) New(ctx ...interface{}) log.Logger {
 	return &logger{l.t, l.l.New(ctx...), l.mu, l.h}
 }
