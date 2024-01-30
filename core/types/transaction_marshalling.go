@@ -633,6 +633,8 @@ func (t *Transaction) UnmarshalJSON(input []byte) error {
 			Value:   (*big.Int)(dec.Value),
 			Data:    *dec.Data,
 		}
+	case BlobTxType:
+		inner = &DummyBlobTx{}
 	default:
 		return ErrTxTypeNotSupported
 	}
