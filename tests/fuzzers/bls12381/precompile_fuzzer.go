@@ -25,26 +25,16 @@ import (
 )
 
 const (
-	blsG1Add      = byte(10)
-	blsG1Mul      = byte(11)
-	blsG1MultiExp = byte(12)
-	blsG2Add      = byte(13)
-	blsG2Mul      = byte(14)
-	blsG2MultiExp = byte(15)
-	blsPairing    = byte(16)
-	blsMapG1      = byte(17)
-	blsMapG2      = byte(18)
+	blsG1Add      = byte(11)
+	blsG1Mul      = byte(12)
+	blsG1MultiExp = byte(13)
+	blsG2Add      = byte(14)
+	blsG2Mul      = byte(15)
+	blsG2MultiExp = byte(16)
+	blsPairing    = byte(17)
+	blsMapG1      = byte(18)
+	blsMapG2      = byte(19)
 )
-
-func FuzzG1Add(data []byte) int      { return fuzz(blsG1Add, data) }
-func FuzzG1Mul(data []byte) int      { return fuzz(blsG1Mul, data) }
-func FuzzG1MultiExp(data []byte) int { return fuzz(blsG1MultiExp, data) }
-func FuzzG2Add(data []byte) int      { return fuzz(blsG2Add, data) }
-func FuzzG2Mul(data []byte) int      { return fuzz(blsG2Mul, data) }
-func FuzzG2MultiExp(data []byte) int { return fuzz(blsG2MultiExp, data) }
-func FuzzPairing(data []byte) int    { return fuzz(blsPairing, data) }
-func FuzzMapG1(data []byte) int      { return fuzz(blsMapG1, data) }
-func FuzzMapG2(data []byte) int      { return fuzz(blsMapG2, data) }
 
 func checkInput(id byte, inputLen int) bool {
 	switch id {
@@ -70,12 +60,14 @@ func checkInput(id byte, inputLen int) bool {
 	panic("programmer error")
 }
 
-// The fuzzer functions must return
-// 1 if the fuzzer should increase priority of the
-//    given input during subsequent fuzzing (for example, the input is lexically
-//    correct and was parsed successfully);
-// -1 if the input must not be added to corpus even if gives new coverage; and
-// 0  otherwise
+// The function must return
+//
+//   - 1 if the fuzzer should increase priority of the
+//     given input during subsequent fuzzing (for example, the input is lexically
+//     correct and was parsed successfully);
+//   - -1 if the input must not be added to corpus even if gives new coverage; and
+//   - 0 otherwise
+//
 // other values are reserved for future use.
 func fuzz(id byte, data []byte) int {
 	// Even on bad input, it should not crash, so we still test the gas calc

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -34,7 +35,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/docker/docker/pkg/reexec"
+	"github.com/ethereum/go-ethereum/internal/reexec"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -302,10 +303,13 @@ func (n *ExecNode) Stop() error {
 	go func() {
 		waitErr <- n.Cmd.Wait()
 	}()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+
 	select {
 	case err := <-waitErr:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-timer.C:
 		return n.Cmd.Process.Kill()
 	}
 }
@@ -375,9 +379,11 @@ type execNodeConfig struct {
 
 func initLogging() {
 	// Initialize the logging by default first.
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.LogfmtFormat()))
-	glogger.Verbosity(log.LvlInfo)
-	log.Root().SetHandler(glogger)
+	var innerHandler slog.Handler
+	innerHandler = slog.NewTextHandler(os.Stderr, nil)
+	glogger := log.NewGlogHandler(innerHandler)
+	glogger.Verbosity(log.LevelInfo)
+	log.SetDefault(log.NewLogger(glogger))
 
 	confEnv := os.Getenv(envNodeConfig)
 	if confEnv == "" {
@@ -395,14 +401,15 @@ func initLogging() {
 		}
 		writer = logWriter
 	}
-	var verbosity = log.LvlInfo
-	if conf.Node.LogVerbosity <= log.LvlTrace && conf.Node.LogVerbosity >= log.LvlCrit {
-		verbosity = conf.Node.LogVerbosity
+	var verbosity = log.LevelInfo
+	if conf.Node.LogVerbosity <= log.LevelTrace && conf.Node.LogVerbosity >= log.LevelCrit {
+		verbosity = log.FromLegacyLevel(int(conf.Node.LogVerbosity))
 	}
 	// Reinitialize the logger
-	glogger = log.NewGlogHandler(log.StreamHandler(writer, log.TerminalFormat(true)))
+	innerHandler = log.NewTerminalHandler(writer, true)
+	glogger = log.NewGlogHandler(innerHandler)
 	glogger.Verbosity(verbosity)
-	log.Root().SetHandler(glogger)
+	log.SetDefault(log.NewLogger(glogger))
 }
 
 // execP2PNode starts a simulation node when the current binary is executed with
@@ -428,9 +435,11 @@ func execP2PNode() {
 
 	// Send status to the host.
 	statusJSON, _ := json.Marshal(status)
-	if _, err := http.Post(statusURL, "application/json", bytes.NewReader(statusJSON)); err != nil {
+	resp, err := http.Post(statusURL, "application/json", bytes.NewReader(statusJSON))
+	if err != nil {
 		log.Crit("Can't post startup info", "url", statusURL, "err", err)
 	}
+	resp.Body.Close()
 	if stackErr != nil {
 		os.Exit(1)
 	}
@@ -454,7 +463,7 @@ func startExecNodeStack() (*node.Node, error) {
 	// decode the config
 	confEnv := os.Getenv(envNodeConfig)
 	if confEnv == "" {
-		return nil, fmt.Errorf("missing " + envNodeConfig)
+		return nil, errors.New("missing " + envNodeConfig)
 	}
 	var conf execNodeConfig
 	if err := json.Unmarshal([]byte(confEnv), &conf); err != nil {
@@ -501,7 +510,6 @@ func startExecNodeStack() (*node.Node, error) {
 	// Add the snapshot API.
 	stack.RegisterAPIs([]rpc.API{{
 		Namespace: "simulation",
-		Version:   "1.0",
 		Service:   SnapshotAPI{services},
 	}})
 

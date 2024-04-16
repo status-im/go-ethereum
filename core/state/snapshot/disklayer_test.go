@@ -18,15 +18,11 @@ package snapshot
 
 import (
 	"bytes"
-	"io/ioutil"
-	"os"
 	"testing"
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/ethdb/leveldb"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/ethereum/go-ethereum/rlp"
 )
@@ -143,7 +139,7 @@ func TestDiskMerge(t *testing.T) {
 	// Retrieve all the data through the disk layer and validate it
 	base = snaps.Snapshot(diffRoot)
 	if _, ok := base.(*diskLayer); !ok {
-		t.Fatalf("update not flattend into the disk layer")
+		t.Fatalf("update not flattened into the disk layer")
 	}
 
 	// assertAccount ensures that an account matches the given blob.
@@ -366,7 +362,7 @@ func TestDiskPartialMerge(t *testing.T) {
 		// Retrieve all the data through the disk layer and validate it
 		base = snaps.Snapshot(diffRoot)
 		if _, ok := base.(*diskLayer); !ok {
-			t.Fatalf("test %d: update not flattend into the disk layer", i)
+			t.Fatalf("test %d: update not flattened into the disk layer", i)
 		}
 		assertAccount(accNoModNoCache, accNoModNoCache[:])
 		assertAccount(accNoModCache, accNoModCache[:])
@@ -518,18 +514,9 @@ func TestDiskMidAccountPartialMerge(t *testing.T) {
 // TestDiskSeek tests that seek-operations work on the disk layer
 func TestDiskSeek(t *testing.T) {
 	// Create some accounts in the disk layer
-	var db ethdb.Database
+	db := rawdb.NewMemoryDatabase()
+	defer db.Close()
 
-	if dir, err := ioutil.TempDir("", "disklayer-test"); err != nil {
-		t.Fatal(err)
-	} else {
-		defer os.RemoveAll(dir)
-		diskdb, err := leveldb.New(dir, 256, 0, "", false)
-		if err != nil {
-			t.Fatal(err)
-		}
-		db = rawdb.NewDatabase(diskdb)
-	}
 	// Fill even keys [0,2,4...]
 	for i := 0; i < 0xff; i += 2 {
 		acc := common.Hash{byte(i)}

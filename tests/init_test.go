@@ -18,9 +18,9 @@ package tests
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -34,18 +34,20 @@ import (
 )
 
 var (
-	baseDir            = filepath.Join(".", "testdata")
-	blockTestDir       = filepath.Join(baseDir, "BlockchainTests")
-	stateTestDir       = filepath.Join(baseDir, "GeneralStateTests")
-	legacyStateTestDir = filepath.Join(baseDir, "LegacyTests", "Constantinople", "GeneralStateTests")
-	transactionTestDir = filepath.Join(baseDir, "TransactionTests")
-	vmTestDir          = filepath.Join(baseDir, "VMTests")
-	rlpTestDir         = filepath.Join(baseDir, "RLPTests")
-	difficultyTestDir  = filepath.Join(baseDir, "BasicTests")
+	baseDir                        = filepath.Join(".", "testdata")
+	blockTestDir                   = filepath.Join(baseDir, "BlockchainTests")
+	stateTestDir                   = filepath.Join(baseDir, "GeneralStateTests")
+	legacyStateTestDir             = filepath.Join(baseDir, "LegacyTests", "Constantinople", "GeneralStateTests")
+	transactionTestDir             = filepath.Join(baseDir, "TransactionTests")
+	rlpTestDir                     = filepath.Join(baseDir, "RLPTests")
+	difficultyTestDir              = filepath.Join(baseDir, "BasicTests")
+	executionSpecBlockchainTestDir = filepath.Join(".", "spec-tests", "fixtures", "blockchain_tests")
+	executionSpecStateTestDir      = filepath.Join(".", "spec-tests", "fixtures", "state_tests")
+	benchmarksDir                  = filepath.Join(".", "evm-benchmarks", "benchmarks")
 )
 
 func readJSON(reader io.Reader, value interface{}) error {
-	data, err := ioutil.ReadAll(reader)
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		return fmt.Errorf("error reading JSON file: %v", err)
 	}
@@ -89,11 +91,11 @@ func findLine(data []byte, offset int64) (line int) {
 
 // testMatcher controls skipping and chain config assignment to tests.
 type testMatcher struct {
-	configpat    []testConfig
-	failpat      []testFailure
-	skiploadpat  []*regexp.Regexp
-	slowpat      []*regexp.Regexp
-	whitelistpat *regexp.Regexp
+	configpat      []testConfig
+	failpat        []testFailure
+	skiploadpat    []*regexp.Regexp
+	slowpat        []*regexp.Regexp
+	runonlylistpat *regexp.Regexp
 }
 
 type testConfig struct {
@@ -106,7 +108,7 @@ type testFailure struct {
 	reason string
 }
 
-// skipShortMode skips tests matching when the -short flag is used.
+// slow adds expected slow tests matching the pattern.
 func (tm *testMatcher) slow(pattern string) {
 	tm.slowpat = append(tm.slowpat, regexp.MustCompile(pattern))
 }
@@ -117,6 +119,8 @@ func (tm *testMatcher) skipLoad(pattern string) {
 }
 
 // fails adds an expected failure for tests matching the pattern.
+//
+//nolint:unused
 func (tm *testMatcher) fails(pattern string, reason string) {
 	if reason == "" {
 		panic("empty fail reason")
@@ -124,8 +128,8 @@ func (tm *testMatcher) fails(pattern string, reason string) {
 	tm.failpat = append(tm.failpat, testFailure{regexp.MustCompile(pattern), reason})
 }
 
-func (tm *testMatcher) whitelist(pattern string) {
-	tm.whitelistpat = regexp.MustCompile(pattern)
+func (tm *testMatcher) runonly(pattern string) {
+	tm.runonlylistpat = regexp.MustCompile(pattern)
 }
 
 // config defines chain config for tests matching the pattern.
@@ -179,7 +183,7 @@ func (tm *testMatcher) checkFailure(t *testing.T, err error) error {
 			t.Logf("error: %v", err)
 			return nil
 		}
-		return fmt.Errorf("test succeeded unexpectedly")
+		return errors.New("test succeeded unexpectedly")
 	}
 	return err
 }
@@ -217,9 +221,9 @@ func (tm *testMatcher) runTestFile(t *testing.T, path, name string, runTest inte
 	if r, _ := tm.findSkip(name); r != "" {
 		t.Skip(r)
 	}
-	if tm.whitelistpat != nil {
-		if !tm.whitelistpat.MatchString(name) {
-			t.Skip("Skipped by whitelist")
+	if tm.runonlylistpat != nil {
+		if !tm.runonlylistpat.MatchString(name) {
+			t.Skip("Skipped by runonly")
 		}
 	}
 	t.Parallel()
@@ -276,10 +280,10 @@ func runTestFunc(runTest interface{}, t *testing.T, name string, m reflect.Value
 	})
 }
 
-func TestMatcherWhitelist(t *testing.T) {
+func TestMatcherRunonlylist(t *testing.T) {
 	t.Parallel()
 	tm := new(testMatcher)
-	tm.whitelist("invalid*")
+	tm.runonly("invalid*")
 	tm.walk(t, rlpTestDir, func(t *testing.T, name string, test *RLPTest) {
 		if name[:len("invalidRLPTest.json")] != "invalidRLPTest.json" {
 			t.Fatalf("invalid test found: %s != invalidRLPTest.json", name)

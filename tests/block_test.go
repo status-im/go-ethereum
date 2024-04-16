@@ -17,12 +17,14 @@
 package tests
 
 import (
+	"math/rand"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 )
 
 func TestBlockchain(t *testing.T) {
-	t.Parallel()
-
 	bt := new(testMatcher)
 	// General state tests are 'exported' as blockchain tests, but we can run them natively.
 	// For speedier CI-runs, the line below can be uncommented, so those are skipped.
@@ -46,15 +48,63 @@ func TestBlockchain(t *testing.T) {
 	// test takes a lot for time and goes easily OOM because of sha3 calculation on a huge range,
 	// using 4.6 TGas
 	bt.skipLoad(`.*randomStatetest94.json.*`)
+
 	bt.walk(t, blockTestDir, func(t *testing.T, name string, test *BlockTest) {
-		if err := bt.checkFailure(t, test.Run(false)); err != nil {
-			t.Errorf("test without snapshotter failed: %v", err)
-		}
-		if err := bt.checkFailure(t, test.Run(true)); err != nil {
-			t.Errorf("test with snapshotter failed: %v", err)
-		}
+		execBlockTest(t, bt, test)
 	})
 	// There is also a LegacyTests folder, containing blockchain tests generated
 	// prior to Istanbul. However, they are all derived from GeneralStateTests,
 	// which run natively, so there's no reason to run them here.
+}
+
+// TestExecutionSpecBlocktests runs the test fixtures from execution-spec-tests.
+func TestExecutionSpecBlocktests(t *testing.T) {
+	if !common.FileExist(executionSpecBlockchainTestDir) {
+		t.Skipf("directory %s does not exist", executionSpecBlockchainTestDir)
+	}
+	bt := new(testMatcher)
+
+	// These tests fail as of https://github.com/ethereum/go-ethereum/pull/28666, since we
+	// no longer delete "leftover storage" when deploying a contract.
+	bt.skipLoad(`^cancun/eip6780_selfdestruct/selfdestruct/self_destructing_initcode_create_tx.json`)
+	bt.skipLoad(`^cancun/eip6780_selfdestruct/selfdestruct/self_destructing_initcode.json`)
+	bt.skipLoad(`^cancun/eip6780_selfdestruct/selfdestruct/recreate_self_destructed_contract_different_txs.json`)
+	bt.skipLoad(`^cancun/eip6780_selfdestruct/selfdestruct/delegatecall_from_new_contract_to_pre_existing_contract.json`)
+	bt.skipLoad(`^cancun/eip6780_selfdestruct/selfdestruct/create_selfdestruct_same_tx.json`)
+
+	bt.walk(t, executionSpecBlockchainTestDir, func(t *testing.T, name string, test *BlockTest) {
+		execBlockTest(t, bt, test)
+	})
+}
+
+func execBlockTest(t *testing.T, bt *testMatcher, test *BlockTest) {
+	// If -short flag is used, we don't execute all four permutations, only one.
+	executionMask := 0xf
+	if testing.Short() {
+		executionMask = (1 << (rand.Int63() & 4))
+	}
+	if executionMask&0x1 != 0 {
+		if err := bt.checkFailure(t, test.Run(false, rawdb.HashScheme, nil, nil)); err != nil {
+			t.Errorf("test in hash mode without snapshotter failed: %v", err)
+			return
+		}
+	}
+	if executionMask&0x2 != 0 {
+		if err := bt.checkFailure(t, test.Run(true, rawdb.HashScheme, nil, nil)); err != nil {
+			t.Errorf("test in hash mode with snapshotter failed: %v", err)
+			return
+		}
+	}
+	if executionMask&0x4 != 0 {
+		if err := bt.checkFailure(t, test.Run(false, rawdb.PathScheme, nil, nil)); err != nil {
+			t.Errorf("test in path mode without snapshotter failed: %v", err)
+			return
+		}
+	}
+	if executionMask&0x8 != 0 {
+		if err := bt.checkFailure(t, test.Run(true, rawdb.PathScheme, nil, nil)); err != nil {
+			t.Errorf("test in path mode with snapshotter failed: %v", err)
+			return
+		}
+	}
 }

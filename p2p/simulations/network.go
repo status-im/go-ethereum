@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"sync"
 	"time"
@@ -236,7 +235,6 @@ func (net *Network) watchPeerEvents(id enode.ID, events chan *p2p.PeerEvent, sub
 			}
 			peer := event.Peer
 			switch event.Type {
-
 			case p2p.PeerEventTypeAdd:
 				net.DidConnect(id, peer)
 
@@ -248,7 +246,6 @@ func (net *Network) watchPeerEvents(id enode.ID, events chan *p2p.PeerEvent, sub
 
 			case p2p.PeerEventTypeMsgRecv:
 				net.DidReceive(peer, id, event.Protocol, *event.MsgCode)
-
 			}
 
 		case err := <-sub.Err():
@@ -538,7 +535,7 @@ func (net *Network) GetRandomUpNode(excludeIDs ...enode.ID) *Node {
 	return net.getRandomUpNode(excludeIDs...)
 }
 
-// GetRandomUpNode returns a random node on the network, which is running.
+// getRandomUpNode returns a random node on the network, which is running.
 func (net *Network) getRandomUpNode(excludeIDs ...enode.ID) *Node {
 	return net.getRandomNode(net.getUpNodeIDs(), excludeIDs)
 }
@@ -649,8 +646,8 @@ func (net *Network) getConn(oneID, otherID enode.ID) *Conn {
 	return net.Conns[i]
 }
 
-// InitConn(one, other) retrieves the connection model for the connection between
-// peers one and other, or creates a new one if it does not exist
+// InitConn retrieves the connection model for the connection between
+// peers 'oneID' and 'otherID', or creates a new one if it does not exist
 // the order of nodes does not matter, i.e., Conn(i,j) == Conn(j, i)
 // it checks if the connection is already up, and if the nodes are running
 // NOTE:
@@ -694,12 +691,6 @@ func (net *Network) Shutdown() {
 		log.Debug("Stopping node", "id", node.ID())
 		if err := node.Stop(); err != nil {
 			log.Warn("Can't stop node", "id", node.ID(), "err", err)
-		}
-		// If the node has the close method, call it.
-		if closer, ok := node.Node.(io.Closer); ok {
-			if err := closer.Close(); err != nil {
-				log.Warn("Can't close node", "id", node.ID(), "err", err)
-			}
 		}
 	}
 	close(net.quitc)
@@ -934,7 +925,6 @@ func (net *Network) snapshot(addServices []string, removeServices []string) (*Sn
 				if !haveSvc {
 					cleanedServices = append(cleanedServices, svc)
 				}
-
 			}
 			snap.Nodes[i].Node.Config.Lifecycles = cleanedServices
 		}
@@ -1028,7 +1018,6 @@ func (net *Network) Load(snap *Snapshot) error {
 
 	// Start connecting.
 	for _, conn := range snap.Conns {
-
 		if !net.GetNode(conn.One).Up() || !net.GetNode(conn.Other).Up() {
 			//in this case, at least one of the nodes of a connection is not up,
 			//so it would result in the snapshot `Load` to fail
@@ -1039,11 +1028,14 @@ func (net *Network) Load(snap *Snapshot) error {
 		}
 	}
 
+	timeout := time.NewTimer(snapshotLoadTimeout)
+	defer timeout.Stop()
+
 	select {
 	// Wait until all connections from the snapshot are established.
 	case <-allConnected:
 	// Make sure that we do not wait forever.
-	case <-time.After(snapshotLoadTimeout):
+	case <-timeout.C:
 		return errors.New("snapshot connections not established")
 	}
 	return nil
