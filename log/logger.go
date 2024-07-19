@@ -141,14 +141,34 @@ type Logger interface {
 	Handler() slog.Handler
 }
 
+type LoggerOptions struct {
+	// Number of callers to skip in case when
+	// source code location is required
+	// (useful e.g. when using wrappers like zap)
+	SkipCallers int
+	// Use UTC time when creating a slog.Record instance
+	UseUTC bool
+}
+
 type logger struct {
 	inner *slog.Logger
+	opts  *LoggerOptions
 }
 
 // NewLogger returns a logger with the specified handler set
 func NewLogger(h slog.Handler) Logger {
 	return &logger{
 		slog.New(h),
+		nil,
+	}
+}
+
+// NewLoggerWithOpts returns a logger
+// with the specified handler and options set
+func NewLoggerWithOpts(h slog.Handler, opts *LoggerOptions) Logger {
+	return &logger{
+		slog.New(h),
+		opts,
 	}
 }
 
@@ -162,13 +182,21 @@ func (l *logger) Write(level slog.Level, msg string, attrs ...any) {
 		return
 	}
 
-	var pcs [1]uintptr
-	runtime.Callers(3, pcs[:])
-
 	if len(attrs)%2 != 0 {
 		attrs = append(attrs, nil, errorKey, "Normalized odd number of arguments by adding nil")
 	}
-	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
+
+	curTime := time.Now()
+	if l.opts != nil && l.opts.UseUTC {
+		curTime = curTime.UTC()
+	}
+	var pcs [1]uintptr
+	var skipCallers int
+	if l.opts != nil {
+		skipCallers = l.opts.SkipCallers
+	}
+	runtime.Callers(3+skipCallers, pcs[:])
+	r := slog.NewRecord(curTime, level, msg, pcs[0])
 	r.Add(attrs...)
 	l.inner.Handler().Handle(context.Background(), r)
 }
@@ -178,7 +206,7 @@ func (l *logger) Log(level slog.Level, msg string, attrs ...any) {
 }
 
 func (l *logger) With(ctx ...interface{}) Logger {
-	return &logger{l.inner.With(ctx...)}
+	return &logger{l.inner.With(ctx...), l.opts}
 }
 
 func (l *logger) New(ctx ...interface{}) Logger {

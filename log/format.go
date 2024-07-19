@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -30,7 +32,14 @@ type TerminalStringer interface {
 	TerminalString() string
 }
 
-func (h *TerminalHandler) format(buf []byte, r slog.Record, usecolor bool) []byte {
+func (h *TerminalHandler) source(r slog.Record) string {
+	fs := runtime.CallersFrames([]uintptr{r.PC})
+	f, _ := fs.Next()
+
+	return fmt.Sprintf("%s:%d", filepath.Base(f.File), f.Line)
+}
+
+func (h *TerminalHandler) format(buf []byte, r slog.Record, usecolor bool, addSource bool) []byte {
 	msg := escapeMessage(r.Message)
 	var color = ""
 	if usecolor {
@@ -53,6 +62,11 @@ func (h *TerminalHandler) format(buf []byte, r slog.Record, usecolor bool) []byt
 		buf = make([]byte, 0, 30+termMsgJust)
 	}
 	b := bytes.NewBuffer(buf)
+
+	if addSource {
+		b.WriteString(h.source(r))
+		b.WriteString(": ")
+	}
 
 	if color != "" { // Start color
 		b.WriteString(color)
