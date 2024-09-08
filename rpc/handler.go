@@ -347,6 +347,17 @@ func (h *handler) handleCall(cp *callProc, msg *jsonrpcMessage) *jsonrpcMessage 
 		rpcServingTimer.UpdateSince(start)
 		updateServeTimeHistogram(msg.Method, answer.Error == nil, time.Since(start))
 	}
+
+	// Log RPC call using the RPC logger
+	if log.IsRPCLoggingEnabled() {
+		rpcLogger := log.GetRPCLogger()
+		rpcLogger.Info("RPC Call",
+			"msg", msg,
+			"answer", answer,
+			"duration", time.Since(start),
+		)
+	}
+
 	return answer
 }
 
