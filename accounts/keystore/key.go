@@ -32,7 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
-	"github.com/igor-sirotin/extkeys"
+	"github.com/status-im/extkeys"
 )
 
 const (
