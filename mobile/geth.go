@@ -150,9 +150,7 @@ func NewNode(datadir string, config *NodeConfig) (stack *Node, _ error) {
 	if err != nil {
 		return nil, err
 	}
-
-	debug.Memsize.Add("node", rawStack)
-
+	
 	var genesis *core.Genesis
 	if config.EthereumGenesis != "" {
 		// Parse the user supplied genesis spec if not mainnet
